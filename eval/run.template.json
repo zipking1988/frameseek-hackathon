@@ -1,0 +1,11 @@
+{
+  "schema_version": "0.1",
+  "id": "unrun-template",
+  "dataset_sha256": "0bf74f6862a98559249e5ac7c51eccc3f4e4ac09afbf926499848f1e117650c5",
+  "mode": "fixture",
+  "variant": "full_agent",
+  "models": {},
+  "configuration_sha256": null,
+  "currency_unit": null,
+  "results": []
+}

@@ -1,0 +1,97 @@
+{
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "pending"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "retry_after_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retry_after_seconds"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "unknown"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "retry_after_seconds": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "kind": {
+      "const": "query_control",
+      "title": "Kind",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "unknown"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "title": "Request Id",
+      "type": "string"
+    },
+    "suggested_action": {
+      "maxLength": 10000,
+      "minLength": 1,
+      "title": "Suggested Action",
+      "type": "string"
+    },
+    "retry_after_seconds": {
+      "anyOf": [
+        {
+          "maximum": 10,
+          "minimum": 2,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Retry After Seconds"
+    }
+  },
+  "required": [
+    "kind",
+    "state",
+    "request_id",
+    "suggested_action"
+  ],
+  "title": "QueryControl",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

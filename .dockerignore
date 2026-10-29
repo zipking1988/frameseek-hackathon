@@ -1,0 +1,13 @@
+# Allowlist: never send private media, databases, approvals, env files or drafts
+# to a container builder. The server uses the committed frontend build.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/frameseek/
+!src/frameseek/**
+**/__pycache__/
+**/*.pyc

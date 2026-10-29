@@ -1,0 +1,491 @@
+{
+  "$defs": {
+    "ErrorDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "stage": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Stage",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "cause": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Cause",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "suggested_action": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Suggested Action",
+          "type": "string"
+        },
+        "docs_url": {
+          "const": "/docs/errors",
+          "title": "Docs Url",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "stage",
+        "message",
+        "cause",
+        "retryable",
+        "suggested_action",
+        "docs_url",
+        "request_id"
+      ],
+      "title": "ErrorDetail",
+      "type": "object"
+    },
+    "Event": {
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "not": {
+            "required": [
+              "support_score"
+            ]
+          },
+          "properties": {
+            "support_level": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "support_level"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "support_level"
+            ]
+          },
+          "properties": {
+            "support_score": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "support_score"
+          ]
+        }
+      ],
+      "properties": {
+        "video_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "title": "Video Id",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "number"
+        },
+        "end": {
+          "minimum": 0,
+          "title": "End",
+          "type": "number"
+        },
+        "start_hms": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Start Hms",
+          "type": "string"
+        },
+        "end_hms": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "End Hms",
+          "type": "string"
+        },
+        "action": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Action",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "support_score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Support Score"
+        },
+        "support_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Support Level"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "video_id",
+        "start",
+        "end",
+        "start_hms",
+        "end_hms",
+        "action",
+        "summary",
+        "evidence"
+      ],
+      "title": "Event",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "t": {
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "t_hms": {
+          "maxLength": 10000,
+          "minLength": 1,
+          "title": "T Hms",
+          "type": "string"
+        },
+        "frame_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "uri": {
+          "pattern": "^/media/[a-zA-Z0-9_-]+/frames/[a-zA-Z0-9_.-]+\\.jpg$",
+          "title": "Uri",
+          "type": "string"
+        },
+        "caption": {
+          "anyOf": [
+            {
+              "maxLength": 10000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Caption"
+        },
+        "asr": {
+          "anyOf": [
+            {
+              "maxLength": 10000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Asr"
+        }
+      },
+      "required": [
+        "t",
+        "t_hms",
+        "frame_id",
+        "uri",
+        "caption",
+        "asr"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Trace": {
+      "additionalProperties": false,
+      "properties": {
+        "visible": {
+          "$ref": "#/$defs/VisibleTrace"
+        },
+        "debug": {
+          "default": null,
+          "title": "Debug",
+          "type": "null"
+        }
+      },
+      "required": [
+        "visible"
+      ],
+      "title": "Trace",
+      "type": "object"
+    },
+    "VisibleTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "items": {
+            "enum": [
+              "asr_keyword",
+              "visual_vector"
+            ],
+            "type": "string"
+          },
+          "title": "Channels",
+          "type": "array"
+        },
+        "segments_reviewed": {
+          "minimum": 0,
+          "title": "Segments Reviewed",
+          "type": "integer"
+        },
+        "evidence_segments": {
+          "minimum": 0,
+          "title": "Evidence Segments",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channels",
+        "segments_reviewed",
+        "evidence_segments"
+      ],
+      "title": "VisibleTrace",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "events": {
+            "minItems": 1
+          },
+          "unresolved": {
+            "maxItems": 0
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "partial"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "events": {
+            "minItems": 1
+          },
+          "unresolved": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "no_result"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "events": {
+            "maxItems": 0
+          },
+          "unresolved": {
+            "maxItems": 0
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "error"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "events": {
+            "maxItems": 0
+          },
+          "errors": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "no_result",
+        "error"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "timebase": {
+      "const": "video_absolute_seconds",
+      "title": "Timebase",
+      "type": "string"
+    },
+    "answer": {
+      "maxLength": 10000,
+      "minLength": 1,
+      "title": "Answer",
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/Event"
+      },
+      "maxItems": 100,
+      "title": "Events",
+      "type": "array"
+    },
+    "unresolved": {
+      "items": {
+        "maxLength": 10000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 100,
+      "title": "Unresolved",
+      "type": "array"
+    },
+    "followups": {
+      "items": {
+        "maxLength": 10000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Followups",
+      "type": "array"
+    },
+    "trace": {
+      "$ref": "#/$defs/Trace"
+    },
+    "errors": {
+      "items": {
+        "$ref": "#/$defs/ErrorDetail"
+      },
+      "maxItems": 100,
+      "title": "Errors",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "status",
+    "timebase",
+    "answer",
+    "events",
+    "unresolved",
+    "followups",
+    "trace",
+    "errors"
+  ],
+  "title": "Answer",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,16 @@
+{
+  "provider": "gemini",
+  "allow_google_media": false,
+  "vision": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "model": "SET_AVAILABLE_GEMINI_MODEL_ID", "revision": "PIN_VERIFIED_REVISION", "key_env": "GEMINI_API_KEY", "max_cost_micro": 1},
+  "embed": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "model": "gemini-embedding-001", "revision": "PIN_VERIFIED_REVISION", "key_env": "GEMINI_API_KEY", "max_cost_micro": 1},
+  "rerank": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "model": "SET_AVAILABLE_GEMINI_MODEL_ID", "revision": "PIN_VERIFIED_REVISION", "key_env": "GEMINI_API_KEY", "max_cost_micro": 1},
+  "text": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "model": "SET_AVAILABLE_GEMINI_MODEL_ID", "revision": "PIN_VERIFIED_REVISION", "key_env": "GEMINI_API_KEY", "max_cost_micro": 1},
+  "asr": null,
+  "budget_version": "REPLACE_AFTER_NUMERIC_APPROVAL",
+  "currency_unit": "USD_MICRO",
+  "calibration_reference": "",
+  "valid_until": 0.0,
+  "attempt_seconds": 60,
+  "resource_cutoff_reference": "",
+  "self_hosted_hosts": []
+}

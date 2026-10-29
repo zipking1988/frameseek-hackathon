@@ -1,0 +1,14 @@
+{
+  "vision": {"base_url":"https://SELF_HOSTED_VISION/v1", "model":"nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning", "revision":"PIN_DEPLOYED_REVISION", "key_env":"NVIDIA_VISION_API_KEY", "max_cost_micro":1},
+  "embed": {"base_url":"https://SELF_HOSTED_EMBED/v1", "model":"SET_DEPLOYED_NEMOTRON_EMBED_ID", "revision":"PIN_DEPLOYED_REVISION", "key_env":"NVIDIA_EMBED_API_KEY", "max_cost_micro":1},
+  "rerank": {"base_url":"https://SELF_HOSTED_RERANK/v1", "model":"SET_DEPLOYED_NEMOTRON_RERANK_ID", "revision":"PIN_DEPLOYED_REVISION", "key_env":"NVIDIA_RERANK_API_KEY", "max_cost_micro":1},
+  "text": {"base_url":"https://api.tokenfactory.nebius.com/v1", "model":"SET_DEPLOYED_NEMOTRON_ULTRA_OR_SUPER_ID", "revision":"PIN_PROVIDER_REVISION", "key_env":"NEBIUS_API_KEY", "max_cost_micro":1},
+  "asr": null,
+  "budget_version":"REPLACE_AFTER_NUMERIC_APPROVAL",
+  "currency_unit":"USD_MICRO",
+  "calibration_reference":"",
+  "valid_until":0.0,
+  "attempt_seconds":60,
+  "resource_cutoff_reference":"",
+  "self_hosted_hosts":["SELF_HOSTED_VISION", "SELF_HOSTED_EMBED", "SELF_HOSTED_RERANK"]
+}

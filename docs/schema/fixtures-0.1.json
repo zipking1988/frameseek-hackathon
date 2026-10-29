@@ -1,0 +1,137 @@
+{
+  "ok": {
+    "schema_version": "0.1",
+    "status": "ok",
+    "timebase": "video_absolute_seconds",
+    "answer": "MODE=fixture：固定合同样例，不代表模型效果。",
+    "events": [
+      {
+        "video_id": "fixture_video",
+        "start": 2.0,
+        "end": 4.0,
+        "start_hms": "00:00:02",
+        "end_hms": "00:00:04",
+        "action": "示例动作",
+        "summary": "仅供合同校验的固定事件，不是模型识别结果。",
+        "support_level": "medium",
+        "evidence": [
+          {
+            "t": 3.0,
+            "t_hms": "00:00:03",
+            "frame_id": "fixture_video_f3",
+            "uri": "/media/fixture_video/frames/3.jpg",
+            "caption": "固定示例证据",
+            "asr": null
+          }
+        ]
+      }
+    ],
+    "unresolved": [],
+    "followups": [],
+    "trace": {
+      "visible": {
+        "channels": [
+          "visual_vector"
+        ],
+        "segments_reviewed": 1,
+        "evidence_segments": 1
+      },
+      "debug": null
+    },
+    "errors": []
+  },
+  "partial": {
+    "schema_version": "0.1",
+    "status": "partial",
+    "timebase": "video_absolute_seconds",
+    "answer": "MODE=fixture：固定合同样例，不代表模型效果。",
+    "events": [
+      {
+        "video_id": "fixture_video",
+        "start": 2.0,
+        "end": 4.0,
+        "start_hms": "00:00:02",
+        "end_hms": "00:00:04",
+        "action": "示例动作",
+        "summary": "仅供合同校验的固定事件，不是模型识别结果。",
+        "support_level": "medium",
+        "evidence": [
+          {
+            "t": 3.0,
+            "t_hms": "00:00:03",
+            "frame_id": "fixture_video_f3",
+            "uri": "/media/fixture_video/frames/3.jpg",
+            "caption": "固定示例证据",
+            "asr": null
+          }
+        ]
+      }
+    ],
+    "unresolved": [
+      "固定样例的后续范围尚未检查"
+    ],
+    "followups": [],
+    "trace": {
+      "visible": {
+        "channels": [
+          "visual_vector"
+        ],
+        "segments_reviewed": 1,
+        "evidence_segments": 1
+      },
+      "debug": null
+    },
+    "errors": []
+  },
+  "no_result": {
+    "schema_version": "0.1",
+    "status": "no_result",
+    "timebase": "video_absolute_seconds",
+    "answer": "MODE=fixture：固定合同样例，不代表模型效果。",
+    "events": [],
+    "unresolved": [],
+    "followups": [],
+    "trace": {
+      "visible": {
+        "channels": [
+          "visual_vector"
+        ],
+        "segments_reviewed": 1,
+        "evidence_segments": 0
+      },
+      "debug": null
+    },
+    "errors": []
+  },
+  "error": {
+    "schema_version": "0.1",
+    "status": "error",
+    "timebase": "video_absolute_seconds",
+    "answer": "MODE=fixture：固定合同样例，不代表模型效果。",
+    "events": [],
+    "unresolved": [],
+    "followups": [],
+    "trace": {
+      "visible": {
+        "channels": [
+          "visual_vector"
+        ],
+        "segments_reviewed": 1,
+        "evidence_segments": 0
+      },
+      "debug": null
+    },
+    "errors": [
+      {
+        "code": "fixture_failure",
+        "stage": "fixture",
+        "message": "固定失败样例",
+        "cause": "unknown",
+        "retryable": false,
+        "suggested_action": "此为合同校验样例，无需发起真实调用。",
+        "docs_url": "/docs/errors",
+        "request_id": "fixture_error"
+      }
+    ]
+  }
+}

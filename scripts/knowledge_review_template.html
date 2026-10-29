@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>FrameSeek · 本地画面审核</title><style>
+body{margin:0;background:#101b27;color:#e8f1f6;font:16px/1.5 system-ui,sans-serif}
+main{max-width:1100px;margin:auto;padding:24px}h1{margin-bottom:4px}
+section{border:1px solid #365161;border-radius:12px;padding:18px;margin:18px 0;background:#192c39}
+.frames{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+figure{margin:0;background:#101b27;border-radius:8px;padding:8px}img{width:100%;height:auto}
+.frame-preview{display:block;width:100%;padding:0;background:transparent;border:0;cursor:zoom-in}
+dialog{width:min(94vw,1400px);max-width:none;max-height:92vh;background:#101b27;color:#e8f1f6;border:1px solid #365161;border-radius:12px;padding:16px}
+dialog::backdrop{background:rgba(0,0,0,.82)}dialog img{display:block;max-height:78vh;width:auto;max-width:100%;margin:auto;object-fit:contain}
+dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+label{display:inline-block;margin:8px 12px 4px 0}input[type=text],input[type=number]{padding:8px;width:15em}
+button{background:#ff7b32;color:#151c20;border:0;border-radius:8px;padding:12px 18px;font-weight:700;cursor:pointer}
+small{color:#afc3cf} .warning{border-left:3px solid #ffad64;padding-left:12px}
+</style></head><body><main><h1>画面审核 · 仅保存在本机</h1>
+<p class="warning">这是未标注的抽样案例。请逐帧判断，不能确定时选择“不确定”。
+来源类别需审核人确认，预测结果未显示；此页面不会联网。文件含私人视频画面，请勿公开分享。</p>
+<label>审核人 <input id="reviewer" type="text" maxlength="100" autocomplete="off"></label>
+<div id="cases"></div><button id="export" type="button">下载审核结果 JSON</button>
+<label>继续先前审核（将替换本页当前选择） <input id="import" type="file" accept="application/json,.json"></label>
+<p id="status" role="status"></p><p><small>不确定或未填写的案例保持未审核；追问、跳转和预测结果需另外核验。</small></p>
+</main><dialog id="frame-dialog" aria-labelledby="frame-dialog-title"><header><strong id="frame-dialog-title"></strong><button id="frame-dialog-close" type="button">关闭放大画面</button></header><img id="frame-dialog-image" alt=""></dialog><script>
+const data=DATA_PLACEHOLDER; const root=document.getElementById('cases'),journeys=new Map();
+const frameDialog=document.getElementById('frame-dialog'),dialogImage=document.getElementById('frame-dialog-image'),dialogTitle=document.getElementById('frame-dialog-title');
+document.getElementById('frame-dialog-close').addEventListener('click',()=>frameDialog.close());
+for (const entry of data) {
+  const c=entry.case, section=document.createElement('section'), title=document.createElement('h2');
+  title.textContent=c.id+' · '+c.question; section.append(title);
+  const detail=document.createElement('p');detail.textContent=(c.source_kind==='real'?'真实素材':'合成素材')+' · '+c.scope_start+'–'+c.scope_end+' 秒 · '+c.frame_labels.length+' 张抽样画面';section.append(detail);
+  const grid=document.createElement('div');grid.className='frames';
+  c.frame_labels.forEach((item,i)=>{
+    const figure=document.createElement('figure'),img=document.createElement('img'),caption=document.createElement('figcaption'),preview=document.createElement('button');
+    img.src='data:image/jpeg;base64,'+entry.images[i];img.alt='视频 '+c.frame_references[i].t+' 秒的抽样画面';
+    preview.type='button';preview.className='frame-preview';preview.setAttribute('aria-label','放大 '+c.frame_references[i].t+' 秒的画面');
+    preview.append(img);preview.addEventListener('click',()=>{dialogImage.src=img.src;dialogImage.alt=img.alt;dialogTitle.textContent=c.id+' · '+c.frame_references[i].t+' 秒';frameDialog.showModal();});
+    caption.textContent=c.frame_references[i].t+' 秒 · 点击画面放大';figure.append(preview,caption);
+    for(const [value,label] of [['yes','符合'],['no','不符合'],['uncertain','不确定']]){
+      const option=document.createElement('label'),radio=document.createElement('input');
+      radio.type='radio';radio.name=c.id+'-'+i;radio.value=value;option.append(radio,document.createTextNode(label));figure.append(option);
+    } grid.append(figure);
+  }); section.append(grid);
+  const label=document.createElement('label');
+  label.append(document.createTextNode('目标或干扰场景可见时长（秒） '));
+  const duration=document.createElement('input');duration.type='number';duration.min='1';duration.step='any';duration.dataset.duration=c.id;label.append(duration);section.append(label);
+  const journey={};
+  function field(parent,title,type='text') {const label=document.createElement('label'),input=document.createElement('input');label.append(document.createTextNode(title+' '));input.type=type;label.append(input);parent.append(label);return input;}
+  if(c.categories.includes('followup')){
+    const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='追问页面核验';group.append(legend);
+    journey.followReviewed=field(group,'已实际核验追问','checkbox');journey.parent=field(group,'原问题请求 ID');journey.resolved=field(group,'系统解析后的完整问题');journey.followEvidence=field(group,'核验记录位置');section.append(group);
+  }
+  if(c.categories.includes('seek')){
+    const group=document.createElement('fieldset'),legend=document.createElement('legend');legend.textContent='时间跳转页面核验';group.append(legend);
+    journey.seekReviewed=field(group,'已实际核验跳转','checkbox');
+    const label=document.createElement('label'),select=document.createElement('select');label.append(document.createTextNode('引用画面 '));
+    for(const frame of c.frame_references){const option=document.createElement('option');option.value=frame.frame_id;option.textContent=frame.t+' 秒';select.append(option);}
+    label.append(select);group.append(label);journey.frame=select;journey.player=field(group,'播放器实际时间（秒）','number');journey.player.step='any';journey.seekEvidence=field(group,'核验记录位置');section.append(group);
+  }
+  journeys.set(c.id,journey);root.append(section);
+}
+document.getElementById('export').addEventListener('click',()=>{
+  const reviewer=document.getElementById('reviewer').value.trim();
+  const records=data.map(({case:c})=>{
+    const labels=c.frame_labels.map((item,i)=>{
+      const checked=document.querySelector('input[name="'+CSS.escape(c.id+'-'+i)+'"]:checked');
+      return {frame_id:item.frame_id,visible:checked?.value==='yes'?true:checked?.value==='no'?false:null};
+    });
+    const duration=Number(document.querySelector('input[data-duration="'+CSS.escape(c.id)+'"]').value);
+    const reviewed=Boolean(reviewer)&&Number.isFinite(duration)&&duration>=1&&labels.every(x=>typeof x.visible==='boolean');
+    const record={...c,reviewer,visible_duration_seconds:Number.isFinite(duration)&&duration>0?duration:null,
+      frame_labels:labels,reviewed,expected:reviewed?labels.filter(x=>x.visible).map(x=>x.frame_id):null,predicted:null};
+    const journey=journeys.get(c.id);
+    if(journey.followReviewed?.checked)record.followup_check={reviewed:true,parent_request_id:journey.parent.value.trim(),resolved_question:journey.resolved.value.trim(),evidence_reference:journey.followEvidence.value.trim(),source_fingerprint:c.source_fingerprint,index_version:c.index_version};
+    if(journey.seekReviewed?.checked){const frame=c.frame_references.find(x=>x.frame_id===journey.frame.value);record.seek_checks=[{reviewed:true,frame_id:journey.frame.value,target_time:frame?.t,player_time:journey.player.value===''?null:Number(journey.player.value),evidence_reference:journey.seekEvidence.value.trim()}];}
+    return record;
+  });
+  const url=URL.createObjectURL(new Blob([JSON.stringify(records,null,2)],{type:'application/json'}));
+  const a=document.createElement('a');a.href=url;a.download='frameseek-human-review.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  document.getElementById('status').textContent='已下载；完成审核 '+records.filter(x=>x.reviewed).length+' / '+records.length+' 条。';
+});
+document.getElementById('import').addEventListener('change',async event=>{
+  const file=event.target.files?.[0],status=document.getElementById('status');
+  if(!file)return;
+  try {
+    if(file.size>10*1024*1024)throw Error('size');
+    const records=JSON.parse(await file.text());
+    if(!Array.isArray(records)||records.length!==data.length)throw Error('cases');
+    const mutable=new Set(['frame_labels','expected','reviewed','reviewer','visible_duration_seconds']);
+    const byId=new Map();
+    for(const record of records){
+      if(!record||typeof record.id!=='string'||byId.has(record.id))throw Error('identity');
+      byId.set(record.id,record);
+    }
+    const reviewers=new Set();
+    for(const {case:c} of data){
+      const record=byId.get(c.id);
+      const allowedExtra=new Set([...(c.categories.includes('followup')?['followup_check']:[]),...(c.categories.includes('seek')?['seek_checks']:[])]);
+      if(!record||Object.keys(record).some(key=>!(key in c)&&!allowedExtra.has(key))||Object.keys(c).some(key=>!mutable.has(key)&&JSON.stringify(record[key])!==JSON.stringify(c[key])))throw Error('identity');
+      if(typeof record.reviewer!=='string'||record.reviewer.length>100||!Array.isArray(record.frame_labels)||record.frame_labels.length!==c.frame_labels.length)throw Error('labels');
+      if(record.visible_duration_seconds!==null&&(typeof record.visible_duration_seconds!=='number'||!Number.isFinite(record.visible_duration_seconds)||record.visible_duration_seconds<=0))throw Error('duration');
+      for(let i=0;i<c.frame_labels.length;i++){
+        const item=record.frame_labels[i];
+        if(!item||item.frame_id!==c.frame_labels[i].frame_id||![true,false,null].includes(item.visible))throw Error('labels');
+      }
+      if(record.followup_check){const check=record.followup_check;if(check.reviewed!==true||check.source_fingerprint!==c.source_fingerprint||check.index_version!==c.index_version||!['parent_request_id','resolved_question','evidence_reference'].every(k=>typeof check[k]==='string'))throw Error('followup');}
+      if(record.seek_checks){const checks=record.seek_checks,check=checks?.[0],frame=c.frame_references.find(x=>x.frame_id===check?.frame_id);if(!Array.isArray(checks)||checks.length!==1||check.reviewed!==true||!frame||check.target_time!==frame.t||(check.player_time!==null&&(typeof check.player_time!=='number'||!Number.isFinite(check.player_time)))||typeof check.evidence_reference!=='string')throw Error('seek');}
+      if(record.reviewer.trim())reviewers.add(record.reviewer.trim());
+    }
+    if(reviewers.size>1)throw Error('reviewer');
+    document.getElementById('reviewer').value=[...reviewers][0]||'';
+    for(const {case:c} of data){
+      const record=byId.get(c.id);
+      record.frame_labels.forEach((item,i)=>{
+        const name=c.id+'-'+i,value=item.visible===true?'yes':item.visible===false?'no':'uncertain';
+        document.querySelector('input[name="'+CSS.escape(name)+'"][value="'+value+'"]').checked=true;
+      });
+      document.querySelector('input[data-duration="'+CSS.escape(c.id)+'"]').value=record.visible_duration_seconds??'';
+      const journey=journeys.get(c.id),follow=record.followup_check,seek=record.seek_checks?.[0];
+      if(journey.followReviewed){journey.followReviewed.checked=Boolean(follow);journey.parent.value=follow?.parent_request_id||'';journey.resolved.value=follow?.resolved_question||'';journey.followEvidence.value=follow?.evidence_reference||'';}
+      if(journey.seekReviewed){journey.seekReviewed.checked=Boolean(seek);if(seek)journey.frame.value=seek.frame_id;journey.player.value=seek?.player_time??'';journey.seekEvidence.value=seek?.evidence_reference||'';}
+    }
+    status.textContent='已恢复本机审核记录；请继续检查并重新下载。';
+  } catch(error) { status.textContent='无法恢复：文件无效或与当前案例不一致，现有选择未改变。'; }
+  finally { event.target.value=''; }
+});
+</script></body></html>

@@ -1,0 +1,133 @@
+{
+  "schema_version": "0.1",
+  "id": "diagnostics-draft",
+  "split": "diagnostic",
+  "sources": [
+    {
+      "id": "short_visual-source",
+      "kind": "real",
+      "sha256": null
+    },
+    {
+      "id": "speech-source",
+      "kind": "real",
+      "sha256": null
+    },
+    {
+      "id": "cross_window-source",
+      "kind": "real",
+      "sha256": null
+    },
+    {
+      "id": "no_match-source",
+      "kind": "real",
+      "sha256": null
+    }
+  ],
+  "cases": [
+    {
+      "id": "short_visual-1",
+      "video_id": "short_visual-source",
+      "category": "short_visual",
+      "question": "短暂动作在哪个时间范围发生？（待提供真实视频与标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "short_visual-2",
+      "video_id": "short_visual-source",
+      "category": "short_visual",
+      "question": "哪个画面直接支持该动作？（待标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "speech-1",
+      "video_id": "speech-source",
+      "category": "speech",
+      "question": "目标原话在哪个时间范围说出？（待提供音轨与标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "speech-2",
+      "video_id": "speech-source",
+      "category": "speech",
+      "question": "该原话之后发生了什么？（待标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "cross_window-1",
+      "video_id": "cross_window-source",
+      "category": "cross_window",
+      "question": "跨越窗口边界的事件起止时间是什么？（待标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "cross_window-2",
+      "video_id": "cross_window-source",
+      "category": "cross_window",
+      "question": "相邻窗口的证据是否属于同一事件？（待标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "no_match-1",
+      "video_id": "no_match-source",
+      "category": "no_match",
+      "question": "查找一个经人工确认未出现的具体动作。（待标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    },
+    {
+      "id": "no_match-2",
+      "video_id": "no_match-source",
+      "category": "no_match",
+      "question": "查找一段经人工确认未说出的原话。（待标注）",
+      "query_language": "zh",
+      "audio_language": null,
+      "screen_text_language": null,
+      "annotation_state": "draft",
+      "annotated_by": null,
+      "events": [],
+      "relevant_windows": []
+    }
+  ]
+}

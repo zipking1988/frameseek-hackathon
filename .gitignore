@@ -1,0 +1,19 @@
+.venv/
+.env
+.env.*
+!.env.example
+.frameseek/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+node_modules/
+
+.frameseek-data/
+.runtime*.json
+
+# Private evaluation annotations, source manifests and run artifacts
+.frameseek-eval/

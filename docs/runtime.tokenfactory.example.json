@@ -1,0 +1,40 @@
+{
+  "provider": "tokenfactory",
+  "vision": {
+    "base_url": "https://api.tokenfactory.nebius.com/v1",
+    "model": "nvidia/Nemotron-3.5-Super-VL",
+    "revision": "PIN_VERIFIED_REVISION",
+    "key_env": "NEBIUS_API_KEY",
+    "max_cost_micro": 1
+  },
+  "embed": {
+    "base_url": "https://api.tokenfactory.nebius.com/v1",
+    "model": "Qwen/Qwen3-Embedding-8B",
+    "revision": "PIN_VERIFIED_REVISION",
+    "key_env": "NEBIUS_API_KEY",
+    "max_cost_micro": 1
+  },
+  "rerank": {
+    "base_url": "https://api.tokenfactory.nebius.com/v1",
+    "model": "nvidia/Nemotron-3.5-Super-VL",
+    "revision": "PIN_VERIFIED_REVISION",
+    "key_env": "NEBIUS_API_KEY",
+    "max_cost_micro": 1
+  },
+  "text": {
+    "base_url": "https://api.tokenfactory.nebius.com/v1",
+    "model": "nvidia/Nemotron-3.5-Super-VL",
+    "revision": "PIN_VERIFIED_REVISION",
+    "key_env": "NEBIUS_API_KEY",
+    "max_cost_micro": 1
+  },
+  "asr": null,
+  "budget_version": "REPLACE_AFTER_NUMERIC_APPROVAL",
+  "currency_unit": "USD_MICRO",
+  "calibration_reference": "",
+  "valid_until": 0.0,
+  "attempt_seconds": 60,
+  "resource_cutoff_reference": "",
+  "self_hosted_hosts": [],
+  "allow_tokenfactory_media": false
+}
