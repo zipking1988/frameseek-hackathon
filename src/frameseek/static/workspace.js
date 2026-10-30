@@ -981,7 +981,7 @@
       else if(desks.length)await openDesk(desks[0].id);else await create(demo);
       if(/(?:^|[?&])demo=basketball(?:&|$)/.test(window.location?.search || '')) {
         if(currentVideo.id!==demo.id) await openSource(demo);
-        window.requestAnimationFrame?.(() => document.querySelector?.('.reading-demo-examples button')?.focus());
+        window.requestAnimationFrame?.(() => document.querySelector?.('.reading-demo-examples .suggestion-buttons button')?.focus());
       }
       store().subscribe(changed);
       window.addEventListener("frameseek-canvas-changed",changed);
@@ -1023,7 +1023,7 @@
     }catch(error){suspended=true;status("Investigation service unavailable","error");ui().notify(error.message);document.body?.setAttribute("data-workspace-startup","error");}
   }
   window.FrameSeekPersistence={flush,upload,ask,library,searchIndex:searchSavedFrames,canSearchOcr,openDemo:()=>openSource(demo).then(opened=>{
-    if(opened) window.requestAnimationFrame?.(() => (document.querySelector?.('.reading-demo-examples button') || $('question')).focus());
+    if(opened) window.requestAnimationFrame?.(() => (document.querySelector?.('.reading-demo-examples .suggestion-buttons button') || $('question')).focus());
     return opened;
   }).catch(e=>ui().notify(e.message)),
     newInvestigation:()=>create(currentVideo).catch(e=>ui().notify(e.message))};

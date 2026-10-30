@@ -2158,6 +2158,7 @@ body[data-workspace-startup="error"] .workspace-startup-loading { display: none;
 .reading-empty-steps { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 30px; color: #91a8b8; font-size: 13px; }
 .reading-demo-examples { margin-top: 28px; max-width: 580px; }
 .reading-demo-examples p { color: #b8cad6; font-size: 12px; }
+.reading-demo-examples .suggestion-buttons { margin-top: 12px; }
 .reading-demo-examples small { display: block; color: #91a8b8; margin-top: 10px; }
 .reading-demo-examples .suggestion-buttons button { white-space: normal; overflow: visible; }
 .reading-eyebrow { color: #ff965f; font-size: 13px; }

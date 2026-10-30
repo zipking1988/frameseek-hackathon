@@ -212,7 +212,6 @@ function Conversation() {
       {!state.local && <div className="reading-empty-steps" aria-label="Investigation steps"><span>01 Ask</span><span>02 Review</span><span>03 Follow up</span></div>}
       {["demo_parcel", "demo_basketball"].includes(state.sourceInfo?.id) && !state.local && <div className="reading-demo-examples">
         <p>{state.sourceInfo?.id === "demo_basketball" ? "Synthetic basketball demo" : "Synthetic parcel demo"} · Preset answers · No model calls</p>
-        {state.sourceInfo?.id === "demo_basketball" && <button type="button" className="text-button" onClick={() => document.querySelector(".reading-demo-examples .suggestion-buttons button")?.focus()}>Start basketball demo</button>}
         <div className="suggestion-buttons">{window.FrameSeekWorkbenchModel.composerSuggestions(state).items.map(question =>
           <button key={question} type="button" onClick={() => ui()?.fillSuggestedQuestion(question)}>{question}</button>)}</div>
         <small>Choose a question, then send it. Replay a frame and ask a follow-up.</small>
@@ -332,7 +331,7 @@ function ComposerSuggestions() {
     ? ["Summarize the scene", "Find a clear moment", "What is unclear?"]
     : suggestions.label === "Demo questions" && state.sourceInfo?.id === "demo_parcel" ? ["When is the parcel centered?", "When is it on the right?", "Is there a forklift?"] : null);
   return <details className="composer-suggestions composer-popup" name="composer-popover" aria-label="Suggested questions">
-    <summary title="View the suggested questions, click to fill in only and will not send it.">Suggestions</summary>
+    <summary title="Choose a suggestion to fill the question box; it will not be sent automatically.">Suggestions</summary>
     <div className="composer-suggestion-panel">
       <div className="suggestion-heading"><span>{suggestions.label}</span><small>{hasDraft ? "Optional after clearing draft" : "Click to fill in; it will not send"}</small></div>
       <div className="suggestion-buttons">{suggestions.items.map((question, index) =>
@@ -734,7 +733,7 @@ function Inspector() {
                           }
                           ui()?.seek(frame.t, selected.query);
                         }}
-                        aria-label={`Look back at the quote ${clock(frame.t)}`}
+                        aria-label={`Replay evidence at ${clock(frame.t)}`}
                       >
                         <img src={frame.uri} alt={displayText(frame.caption, selected.query)} loading="lazy" decoding="async" />
                         <span>{clock(frame.t)}</span>
@@ -752,7 +751,7 @@ function Inspector() {
                               ),
                             )
                           }
-                          aria-label={`preserve evidence ${clock(frame.t)}`}
+                          aria-label={`Save evidence at ${clock(frame.t)}`}
                         >
                           Save to canvas {icon("plus")}
                         </button>
@@ -834,7 +833,7 @@ function Inspector() {
                 ].map(([value, label]) => (
                   <button
                     key={value}
-                    aria-label={`filter${label}Findings`}
+                    aria-label={`Filter findings: ${label}`}
                     aria-pressed={filter === value}
                     onClick={() => setFilter(value)}
                   >

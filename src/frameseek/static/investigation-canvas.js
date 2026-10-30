@@ -481,7 +481,7 @@
         record.branchFold.setAttribute("aria-expanded", String(!folded));
         record.branchFold.setAttribute(
           "aria-label",
-          `${folded ? "Expand" : "Collapse"}Investigation path:${display(record.query.question, record.query)} (${descendants.size} subsequent objects)`,
+          `${folded ? "Expand" : "Collapse"} investigation path: ${display(record.query.question, record.query)} (${descendants.size} connected ${descendants.size === 1 ? "item" : "items"})`,
         );
         record.overviewOpen.setAttribute(
           "aria-label",
@@ -796,8 +796,8 @@
       callbacks.select(record.query.response, record.history);
       const scope = records.get(record.query.sourceTurn)?.query || record.query;
       $("composer-label").textContent = scope.mode === "real" && !scope.response.events.length
-        ? `Re-question:${scope.question}`
-        : `Continue to ask:${scope.question}`;
+        ? `Ask again about: ${scope.question}`
+        : `Following up on: ${scope.question}`;
       $("clear-context").hidden = false;
       for (const [key, value] of records)
         value.select.setAttribute("aria-pressed", String(key === id));
@@ -842,23 +842,23 @@
             : `Question ${turn.id.split("-")[1]}${parent ? " · Follow-up" : ""}`;
       drag.setAttribute(
         "aria-label",
-        `Mobile card:${display(query.question, query)}, arrow keys to move`,
+        `Move card: ${display(query.question, query)}. Use the arrow keys to move.`,
       );
       const select = document.createElement("button");
       select.type = "button";
       select.className = "card-select";
-      select.textContent = "selected";
+      select.textContent = "Select";
       select.setAttribute(
         "aria-label",
-        `selected${query.kind === "evidence" ? "Evidence" : query.kind === "conclusion" ? "Conclusion" : "Question"}：${display(query.question, query)}`,
+        `Select ${query.kind === "evidence" ? "evidence" : query.kind === "conclusion" ? "conclusion" : "question"}: ${display(query.question, query)}`,
       );
       select.addEventListener("click", e => choose(turn.id,false,e.shiftKey));
       header.append(drag, select);
       if (!query.kind) {
         const remove = document.createElement("button");
         remove.type = "button"; remove.className = "card-delete";
-        remove.textContent = "Delete"; remove.title = "Delete issues (can be restored on the left)";
-        remove.setAttribute("aria-label", `Delete question:${display(query.question, query)}`);
+        remove.textContent = "Delete"; remove.title = "Delete question (you can restore it from the outline)";
+        remove.setAttribute("aria-label", `Delete question: ${display(query.question, query)}`);
         remove.addEventListener("click", e => {e.stopPropagation();root.FrameSeekUI?.hideTurn(turn.id);});
         header.append(remove);
       }
@@ -870,7 +870,7 @@
       const branchName = document.createElement("button");
       branchName.type = "button";
       branchName.className = "branch-name";
-      branchName.setAttribute("aria-label", `Name the investigation path:${display(query.question, query)}`);
+      branchName.setAttribute("aria-label", `Name the investigation path: ${display(query.question, query)}`);
       branchName.addEventListener("click", () => openNaming(turn.id));
       const branchFold = document.createElement("button");
       branchFold.type = "button";

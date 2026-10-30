@@ -45,7 +45,7 @@ class Element {
 }
 async function harness({ state = {}, requests = [], job = "ready", realReady = true, storage = new Map(), owner = "owner-A", revision = 1, queryReferences = false, startupGate = null, awaitStartup = true } = {}) {
   const store = createStore(), ids = new Map(), calls = [], answers = [], timers = new Map();
-  let seq = 100, timerSeq = 0, ready = false, busy = false, context = null, override = null;
+  let seq = 100, timerSeq = 0, ready = false, busy = false, context = null, override = null, focusedSelector = null;
   const get = id => { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); };
   const desks = new Map([
     ["desk-A", { id: "desk-A", video: "video-A", title: "A", revision, state }],
@@ -100,10 +100,11 @@ async function harness({ state = {}, requests = [], job = "ready", realReady = t
   };
   const windowEvents = {};
   const window = { FrameSeekSessionUI: ui, FrameSeekWorkbench: store,
+    requestAnimationFrame(fn) { fn(); },
     addEventListener(type,fn) { (windowEvents[type] ||= []).push(fn); },
     dispatchEvent(event) { (windowEvents[event.type] || []).forEach(fn=>fn(event)); } };
   const body = new Element(); body.setAttribute("data-workspace-startup", "loading");
-  const sandbox = vm.createContext({ Event: class { constructor(type) { this.type=type; } }, window, document: { body, getElementById: get, createElement: () => new Element(), addEventListener() {} }, fetch,
+  const sandbox = vm.createContext({ Event: class { constructor(type) { this.type=type; } }, window, document: { body, getElementById: get, createElement: () => new Element(), addEventListener() {}, querySelector: selector => ({focus() { focusedSelector=selector; }}) }, fetch,
     sessionStorage: {getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     localStorage: { getItem: () => "desk-A", setItem() {} }, crypto: { randomUUID: () => `request-${++seq}` },
     setTimeout: (fn, delay) => { const id = ++timerSeq; timers.set(id, { fn, delay }); return id; }, clearTimeout: id => timers.delete(id),
@@ -115,10 +116,17 @@ async function harness({ state = {}, requests = [], job = "ready", realReady = t
   get("chat-engine").value="model";
   ready = true; const startup = window.testWorkspace.start(); if (awaitStartup) await startup;
   return { store, get, calls, answers, desks, videos, requestLists, ui, window, timers, body, startup,
-    get busy() { return busy; }, setContext(value) { context = value; }, setOverride(fn) { override = fn; },
+    get busy() { return busy; }, get focusedSelector() { return focusedSelector; }, setContext(value) { context = value; }, setOverride(fn) { override = fn; },
     async timer(delay) { const entry = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(entry, `Missing ${delay}ms timer`); timers.delete(entry[0]); entry[1].fn(); await tick(); },
   };
 }
+
+test("starting the basketball demo focuses a suggested question", async () => {
+  const h = await harness();
+  await h.window.FrameSeekPersistence.openDemo();
+  assert.equal(h.window.testWorkspace.get().currentVideo.id, "demo_basketball");
+  assert.equal(h.focusedSelector, ".reading-demo-examples .suggestion-buttons button");
+});
 
 test("startup keeps the fixture hidden until the remembered investigation is restored", async () => {
   const gate = deferred();

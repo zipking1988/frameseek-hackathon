@@ -14,15 +14,15 @@
       crossorigin
     />
     <link rel="stylesheet" href="/static/styles.css?v=136d47b61d96" />
-    <link rel="stylesheet" href="/static/workbench.css?v=0f574ea4a9e8" />
+    <link rel="stylesheet" href="/static/workbench.css?v=b3552e7a8671" />
     <script src="/static/legacy-demo-english.js?v=f87cdb8c6f69" defer></script>
     <script src="/static/demo-conversation.js?v=28ad0f1c7b4f" defer></script>
-    <script src="/static/investigation-canvas.js?v=fc7cefb41fac" defer></script>
+    <script src="/static/investigation-canvas.js?v=9dacfa8ca4a5" defer></script>
     <script src="/static/workbench-model.js?v=c1a9a6fbb1be" defer></script>
     <script src="/static/investigation-report.js?v=e1f15f8b101a" defer></script>
-    <script src="/static/workbench.js?v=b5ec15d59940" defer></script>
-    <script src="/static/workspace.js?v=2ae350dc71fc" defer></script>
-    <script src="/static/app.js?v=5137f9fc6db2" defer></script>
+    <script src="/static/workbench.js?v=cb8ab0c9f3d0" defer></script>
+    <script src="/static/workspace.js?v=1b5903f03d51" defer></script>
+    <script src="/static/app.js?v=c13a40635a10" defer></script>
   </head>
   <body data-workspace-startup="loading">
     <a href="#question" class="skip-link">Skip to question input</a>
@@ -366,7 +366,7 @@
               <div id="composer-suggestions"></div>
               <details class="composer-info composer-popup" name="composer-popover">
                 <summary>Details</summary>
-                <div class="composer-info-panel"><strong>Search and Budget</strong><p>Index mode reads existing analysis and does not re-identify videos. Model analysis is subject to existing budget checks.</p><p id="chat-budget-status" role="status" hidden></p></div>
+                <div class="composer-info-panel"><strong>Search and budget</strong><p>Index mode searches existing analysis without analyzing the video again. Model analysis is subject to budget checks.</p><p id="chat-budget-status" role="status" hidden></p></div>
               </details>
               </div></details>
             </div>
@@ -422,7 +422,7 @@
           <button id="canvas-shortcuts" title="Canvas keyboard shortcuts">Shortcuts</button>
           <button
             id="toggle-minimap"
-            aria-label="Switch canvas minimap"
+            aria-label="Toggle canvas minimap"
             aria-expanded="true"
             aria-controls="canvas-minimap"
           >

@@ -440,7 +440,7 @@ function renderAnswer(query) {
         seek(frame.t, frameButton);
       });
       frameButton.setAttribute("aria-pressed", "false");
-      frameButton.setAttribute("aria-label", `Location evidence frame ${clock(frame.t)}`);
+      frameButton.setAttribute("aria-label", `Replay evidence frame at ${clock(frame.t)}`);
       const image = document.createElement("img");
       image.src = frame.uri;
       image.alt = display(frame.caption);
