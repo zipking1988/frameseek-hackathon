@@ -842,7 +842,7 @@
             : `Question ${turn.id.split("-")[1]}${parent ? " · Follow-up" : ""}`;
       drag.setAttribute(
         "aria-label",
-        `Move card: ${display(query.question, query)}. Use the arrow keys to move.`,
+        `Move card: ${display(query.question, query)} — use the arrow keys to move.`,
       );
       const select = document.createElement("button");
       select.type = "button";

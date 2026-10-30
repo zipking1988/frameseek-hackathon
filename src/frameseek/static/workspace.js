@@ -597,6 +597,13 @@
       return await create(video);
     } finally {if (owns(deskId,epoch)) ui().busy(false);}
   }
+  function focusDemoQuestion() {
+    for (const selector of ['.reading-demo-examples .suggestion-buttons button', '#suggestions button']) {
+      const target=document.querySelector?.(selector);
+      if (target && (!target.getClientRects || target.getClientRects().length)) {target.focus();return;}
+    }
+    $('question')?.focus();
+  }
   async function upload(file) {
     if (!file.type.startsWith("video/") || file.size > 500*1024**2) {ui().notify("Please select a video file that is no larger than 500 MB.");return;}
     try {
@@ -981,7 +988,7 @@
       else if(desks.length)await openDesk(desks[0].id);else await create(demo);
       if(/(?:^|[?&])demo=basketball(?:&|$)/.test(window.location?.search || '')) {
         if(currentVideo.id!==demo.id) await openSource(demo);
-        window.requestAnimationFrame?.(() => document.querySelector?.('.reading-demo-examples .suggestion-buttons button')?.focus());
+        window.requestAnimationFrame?.(focusDemoQuestion);
       }
       store().subscribe(changed);
       window.addEventListener("frameseek-canvas-changed",changed);
@@ -1023,7 +1030,7 @@
     }catch(error){suspended=true;status("Investigation service unavailable","error");ui().notify(error.message);document.body?.setAttribute("data-workspace-startup","error");}
   }
   window.FrameSeekPersistence={flush,upload,ask,library,searchIndex:searchSavedFrames,canSearchOcr,openDemo:()=>openSource(demo).then(opened=>{
-    if(opened) window.requestAnimationFrame?.(() => (document.querySelector?.('.reading-demo-examples .suggestion-buttons button') || $('question')).focus());
+    if(opened) window.requestAnimationFrame?.(focusDemoQuestion);
     return opened;
   }).catch(e=>ui().notify(e.message)),
     newInvestigation:()=>create(currentVideo).catch(e=>ui().notify(e.message))};

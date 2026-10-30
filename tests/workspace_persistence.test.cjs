@@ -43,7 +43,7 @@ class Element {
   scrollIntoView() {}
   querySelector() { return new Element(); }
 }
-async function harness({ state = {}, requests = [], job = "ready", realReady = true, storage = new Map(), owner = "owner-A", revision = 1, queryReferences = false, startupGate = null, awaitStartup = true } = {}) {
+async function harness({ state = {}, requests = [], job = "ready", realReady = true, storage = new Map(), owner = "owner-A", revision = 1, queryReferences = false, startupGate = null, awaitStartup = true, readingSuggestionsVisible = true } = {}) {
   const store = createStore(), ids = new Map(), calls = [], answers = [], timers = new Map();
   let seq = 100, timerSeq = 0, ready = false, busy = false, context = null, override = null, focusedSelector = null;
   const get = id => { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); };
@@ -104,7 +104,7 @@ async function harness({ state = {}, requests = [], job = "ready", realReady = t
     addEventListener(type,fn) { (windowEvents[type] ||= []).push(fn); },
     dispatchEvent(event) { (windowEvents[event.type] || []).forEach(fn=>fn(event)); } };
   const body = new Element(); body.setAttribute("data-workspace-startup", "loading");
-  const sandbox = vm.createContext({ Event: class { constructor(type) { this.type=type; } }, window, document: { body, getElementById: get, createElement: () => new Element(), addEventListener() {}, querySelector: selector => ({focus() { focusedSelector=selector; }}) }, fetch,
+  const sandbox = vm.createContext({ Event: class { constructor(type) { this.type=type; } }, window, document: { body, getElementById: get, createElement: () => new Element(), addEventListener() {}, querySelector: selector => ({getClientRects() { return selector.startsWith('.reading-demo') && !readingSuggestionsVisible ? [] : [{}]; }, focus() { focusedSelector=selector; }}) }, fetch,
     sessionStorage: {getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     localStorage: { getItem: () => "desk-A", setItem() {} }, crypto: { randomUUID: () => `request-${++seq}` },
     setTimeout: (fn, delay) => { const id = ++timerSeq; timers.set(id, { fn, delay }); return id; }, clearTimeout: id => timers.delete(id),
@@ -126,6 +126,12 @@ test("starting the basketball demo focuses a suggested question", async () => {
   await h.window.FrameSeekPersistence.openDemo();
   assert.equal(h.window.testWorkspace.get().currentVideo.id, "demo_basketball");
   assert.equal(h.focusedSelector, ".reading-demo-examples .suggestion-buttons button");
+});
+
+test("starting the demo from canvas focuses its visible suggestion", async () => {
+  const h = await harness({readingSuggestionsVisible: false});
+  await h.window.FrameSeekPersistence.openDemo();
+  assert.equal(h.focusedSelector, "#suggestions button");
 });
 
 test("startup keeps the fixture hidden until the remembered investigation is restored", async () => {

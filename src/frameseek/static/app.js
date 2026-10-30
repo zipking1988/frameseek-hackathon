@@ -744,12 +744,12 @@ function setLocalMode(enabled) {
     enabled
       ? "The footage is open and not indexed yet."
       : investigation
-        ? "Start with a question and start an investigation."
+        ? "Start your investigation with a question."
         : "Which picture are you looking for?";
   $("empty-state").querySelector(".task-intro > p").textContent = enabled
     ? "You can play the file in the video workspace, or return to the demo experience preset session."
     : investigation
-      ? "The found footage will remain here. Keep asking and connect the dots."
+      ? "Choose a question to see an answer and its evidence."
       : "Choose a question, review its evidence, and follow up.";
   $("video-state").title = enabled ? "Not uploaded, not analyzed" : "Publicly available composite material";
   $("seek-status").textContent = enabled
