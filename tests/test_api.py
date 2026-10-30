@@ -58,6 +58,25 @@ async def test_sports_landing_is_public_without_initializing_a_private_session()
         assert (await client.get("/health")).json()["model_requests_sent"] == 0
 
 
+@pytest.mark.anyio
+async def test_html_pages_do_not_reuse_stale_cached_shells():
+    app = create_app(Settings())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for path in ("/", "/workspace", "/static/landing.html", "/static/demo-guide-en.html"):
+            first = await client.get(path)
+            assert first.status_code == 200
+            assert "no-store" in first.headers["cache-control"]
+            stale = await client.get(
+                path,
+                headers={
+                    "If-None-Match": first.headers["etag"],
+                    "If-Modified-Since": "Wed, 31 Dec 2099 23:59:59 GMT",
+                },
+            )
+            assert stale.status_code == 200
+            assert stale.content == first.content
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"

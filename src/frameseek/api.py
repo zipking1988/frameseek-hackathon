@@ -22,6 +22,25 @@ from frameseek.routes import register
 from frameseek.schema import Answer, QueryControl
 
 
+class AppStaticFiles(StaticFiles):
+    """Always re-fetch HTML shells; their versioned assets can remain cacheable."""
+
+    async def get_response(self, path, scope):
+        if path.endswith(".html"):
+            scope = {
+                **scope,
+                "headers": [
+                    (name, value)
+                    for name, value in scope["headers"]
+                    if name.lower() not in (b"if-none-match", b"if-modified-since")
+                ],
+            }
+        response = await super().get_response(path, scope)
+        if path.endswith(".html"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings if settings is not None else load_settings()
     if os.environ.get("K_SERVICE"):
@@ -74,7 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return await call_next(request)
 
     static = Path(__file__).parent / "static"
-    app.mount("/static", StaticFiles(directory=static), name="static")
+    app.mount("/static", AppStaticFiles(directory=static), name="static")
     # Only original public synthetic frames; no private user media is exposed here.
     app.mount(
         "/media/demo_parcel/frames",
@@ -91,11 +110,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(static / "landing.html")
+        return FileResponse(static / "landing.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/workspace", include_in_schema=False)
     def workspace():
-        return FileResponse(static / "index.html")
+        return FileResponse(static / "index.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/demo/catalog")
     def demo_catalog(video_id: str = "demo_parcel"):

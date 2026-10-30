@@ -39,6 +39,8 @@ a suggestion fills the composer; it does not send a question automatically.
 The English judge guide is `/static/demo-guide-en.html`. These answers are
 synthetic presets, not live recognition. Existing parcel investigations and
 older clients remain supported for compatibility.
+HTML pages are served without browser storage so visitors receive the current
+workspace; an already cached older release may need one refresh.
 
 The application starts one API/worker process per workspace. Private sources,
 frames and investigations require their existing session ownership. Do not
