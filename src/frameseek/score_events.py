@@ -206,6 +206,7 @@ def answer_scores(
             }
         )
     verified = []
+    verified_by_proposal = {}
     score_updates = []
     uncertain = []
     seen = set()
@@ -336,6 +337,7 @@ def answer_scores(
                     ],
                 }
             )
+            verified_by_proposal[n] = verified[-1]
         except ValueError as error:
             uncertain.append("复核未完成，保留已确认事件：" + str(error)[:100])
             break
@@ -360,7 +362,7 @@ def answer_scores(
             f"{len(proposed) - len(verified)} 次尚未通过。请回看每次前后比分。"
         )
     text += f"{missing}/{len(frames)} 张抽帧未能可靠读取记分牌；抽帧可能漏检，不保证全片无遗漏。"
-    events = verified if len(verified) == len(score_records) else score_records
+    events = [verified_by_proposal.get(n, event) for n, event in enumerate(score_records)]
     return Answer.model_validate(
         {
             "schema_version": "0.1",

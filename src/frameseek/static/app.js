@@ -1247,6 +1247,7 @@ window.FrameSeekSessionUI = {
       setLocalMode(false); player.src = "/demo/video"; player.poster = "/media/demo_parcel/frames/0.jpg";
       $("video-heading").textContent = "包裹移动 · 合成演示";
       $("attached-source-name").textContent = "包裹移动演示.mp4";
+      $("video-meta").textContent = "18 秒 · 1600 × 900 · 无音轨";
       $("source-thumbnail").src = "/media/demo_parcel/frames/0.jpg";
       $("source-thumbnail").hidden = false;
       window.FrameSeekWorkbench.describe({id:"demo_parcel",name:"包裹移动 · 合成演示",metadata:{duration:18,audio:false}});

@@ -268,6 +268,20 @@ test("uploaded source uses its own preview poster before analysis and replaces i
   assert.equal(h.get("question").disabled, false);
 });
 
+test("switching from an uploaded video resets synthetic metadata before and after media load", async () => {
+  const h = await harness();
+  h.run("window.FrameSeekWorkbench = { source() {}, describe() {}, clear() {} }");
+  h.run('window.FrameSeekSessionUI.applySource({id:"vid_long", name:"Long video", job:{state:"ready"}, metadata:{duration:384}})');
+  Object.assign(h.player, {duration:384, videoWidth:1280, videoHeight:720});
+  h.player.dispatch("loadedmetadata");
+  assert.match(h.get("video-meta").textContent, /06:24/);
+  h.run('window.FrameSeekSessionUI.applySource({id:"demo_parcel",metadata:{duration:18,audio:false}})');
+  assert.equal(h.get("video-meta").textContent, "18 秒 · 1600 × 900 · 无音轨");
+  Object.assign(h.player, {duration:18, videoWidth:1600, videoHeight:900});
+  h.player.dispatch("loadedmetadata");
+  assert.equal(h.get("video-meta").textContent, "18 秒 · 1600 × 900 · 无音轨");
+});
+
 test("retrying a failed real turn preserves the draft and explains a fresh question without dispatch", async () => {
   const h = await harness();
   h.run(`window.FrameSeekWorkbench = {getSnapshot: () => ({records: [{id: 'failed', query: {mode: 'real', question: '请查看视频05:20至05:40', response: {events: []}}}]})};

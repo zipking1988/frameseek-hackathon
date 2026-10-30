@@ -130,6 +130,161 @@ async def test_delete_or_cancel_before_worker_start_releases_capacity(app, monke
         await a.aclose()
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["probe", "analysis", "cancel", "delete"])
+async def test_unexpected_worker_failure_is_terminal_and_preserves_invalidation(
+    app, monkeypatch, outcome
+):
+    import types
+
+    import frameseek.routes
+
+    pending = []
+
+    class DeferredThread:
+        def __init__(self, target, args, daemon):
+            self.target, self.args = target, args
+
+        def start(self):
+            pending.append(self)
+
+    monkeypatch.setattr(frameseek.routes, "threading", types.SimpleNamespace(Thread=DeferredThread))
+    a = await client_for(app)
+    try:
+        uploaded = await a.post(
+            "/api/videos", content=b"deferred", headers={"content-type": "video/mp4"}
+        )
+        video = uploaded.json()["id"]
+        worker = pending.pop()
+        ws = app.state.workspace
+        owner = ws.authenticate(a.cookies.get("fs_session"))["id"]
+
+        def fail(*args, **kwargs):
+            if outcome == "cancel":
+                with ws.db() as c:
+                    c.execute("UPDATE videos SET generation=generation+1 WHERE id=?", (video,))
+                    c.execute(
+                        "UPDATE jobs SET state='cancelled',generation=2,lease=NULL WHERE video=?",
+                        (video,),
+                    )
+            elif outcome == "delete":
+                ws.delete("videos", video, owner)
+            raise RuntimeError("unexpected worker failure")
+
+        if outcome == "analysis":
+            monkeypatch.setattr(app.state.agent, "ingest", fail)
+            worker.target(*worker.args[:3], True)
+        else:
+            monkeypatch.setattr(frameseek.routes, "probe", fail)
+            worker.target(*worker.args)
+        with ws.db() as c:
+            job = c.execute("SELECT * FROM jobs WHERE video=?", (video,)).fetchone()
+        if outcome in {"cancel", "delete"}:
+            assert job["state"] == "cancelled"
+        else:
+            assert job["state"] == "failed" and job["lease"] is None
+            assert job["error"] == ("unknown" if outcome == "analysis" else "analysis_failed")
+    finally:
+        await a.aclose()
+
+
+@pytest.mark.anyio
+async def test_worker_start_failure_releases_capacity_and_lease(app, monkeypatch):
+    import types
+
+    import frameseek.routes
+
+    pending = []
+    fail_start = False
+
+    class DeferredThread:
+        def __init__(self, target, args, daemon):
+            self.target, self.args = target, args
+
+        def start(self):
+            if fail_start:
+                raise RuntimeError("thread unavailable")
+            pending.append(self)
+
+    monkeypatch.setattr(frameseek.routes, "threading", types.SimpleNamespace(Thread=DeferredThread))
+    a = await client_for(app)
+    try:
+        uploaded = await a.post(
+            "/api/videos", content=b"deferred", headers={"content-type": "video/mp4"}
+        )
+        video = uploaded.json()["id"]
+
+        def fail_probe(*_):
+            raise ValueError("probe failed")
+
+        monkeypatch.setattr(frameseek.routes, "probe", fail_probe)
+        worker = pending.pop()
+        worker.target(*worker.args)
+        fail_start = True
+        response = await a.post(f"/api/videos/{video}/retry")
+        assert response.status_code == 503
+        job = (await a.get(f"/api/videos/{video}")).json()["job"]
+        assert job["state"] == "failed" and job["lease"] is None
+        assert job["error"] == "worker_start_failed"
+        fail_start = False
+        assert (await a.post(f"/api/videos/{video}/retry")).status_code == 202
+    finally:
+        await a.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure_stage", ["processor", "start"])
+async def test_optional_knowledge_failure_does_not_undo_preflight(app, monkeypatch, failure_stage):
+    import types
+
+    import frameseek.knowledge_jobs
+    import frameseek.routes
+
+    pending = []
+
+    class DeferredThread:
+        def __init__(self, target, args, daemon):
+            self.target, self.args = target, args
+
+        def start(self):
+            pending.append(self)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("optional indexing unavailable")
+
+    monkeypatch.setattr(frameseek.routes, "threading", types.SimpleNamespace(Thread=DeferredThread))
+    monkeypatch.setattr(frameseek.routes, "probe", lambda *_: {})
+    monkeypatch.setattr(
+        frameseek.routes,
+        "scene_windows",
+        lambda *_: {"duration": 8, "windows": [{"start": 0, "end": 8}]},
+    )
+    monkeypatch.setattr(frameseek.routes, "frames", lambda *_: [])
+    monkeypatch.setattr(frameseek.routes, "local_configured", lambda: True)
+    monkeypatch.setattr(
+        frameseek.knowledge_jobs.FixtureKnowledgeJobs,
+        "processor",
+        fail if failure_stage == "processor" else lambda *_: object(),
+    )
+    if failure_stage == "start":
+        monkeypatch.setattr(frameseek.knowledge_jobs.FixtureKnowledgeJobs, "start", fail)
+    app.state.knowledge_fixture_refactor = True
+    a = await client_for(app)
+    try:
+        uploaded = await a.post(
+            "/api/videos", content=b"deferred", headers={"content-type": "video/mp4"}
+        )
+        video = uploaded.json()["id"]
+        worker = pending.pop()
+        worker.target(*worker.args)
+        detail = (await a.get(f"/api/videos/{video}")).json()
+        assert detail["job"]["state"] == "ready"
+        assert detail["job"]["error"] is None and detail["job"]["lease"] is None
+        assert detail["metadata"]["duration"] == 8
+    finally:
+        await a.aclose()
+
+
 def test_restart_recovers_queued_jobs_without_replaying(tmp_path):
     ws = Workspace(tmp_path)
     with ws.db() as c:

@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
 from frameseek.local_vision import answer_source, cancel_worker, configured
-from frameseek.question_context import resolve_followup, saved_question
+from frameseek.question_context import matches_source_generation, resolve_followup, saved_question
 from frameseek.schema import Answer, QueryControl
 from frameseek.workspace import digest
 
@@ -56,7 +56,7 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
             saved = json.loads(parent["result"])
             if saved.get("video_id") != source["id"]:
                 raise HTTPException(409, "foreign_context_video")
-            if saved.get("source_generation", source["generation"]) != source["generation"]:
+            if not matches_source_generation(saved, source["id"], source["generation"]):
                 raise HTTPException(409, "stale_context_generation")
 
             def load_parent(key):
@@ -230,43 +230,45 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
         if chat_guard:
             chat_guard(desk)
         payload = digest(("cloud:" if cloud else "") + body.model_dump_json())
-        with ws.db() as c:
-            c.execute("BEGIN IMMEDIATE")
-            old = c.execute(
-                "SELECT * FROM queries WHERE owner=? AND id=?", (owner, body.request_id)
-            ).fetchone()
-            if old:
-                if old["hash"] != payload or old["investigation"] != desk["id"]:
-                    raise HTTPException(409, "request_payload_conflict")
-                if old["state"] == "done":
-                    return JSONResponse(
-                        json.loads(old["result"]), headers={"Cache-Control": "no-store"}
-                    )
-                unknown = old["state"] == "unknown"
-                return QueryControl(
-                    kind="query_control",
-                    state="unknown" if unknown else "pending",
-                    request_id=body.request_id,
-                    retry_after_seconds=None if unknown else 3,
-                    suggested_action=json.loads(old["result"] or "{}").get(
-                        "progress", "本机识别仍在进行，完成后将显示回答。"
-                    ),
-                ).model_dump(mode="json")
-            if not available():
-                raise HTTPException(409, "local_vision_not_configured")
-            if cloud:
-                admitted = admission(source, owner, body, context)
-                if admitted["kind"] != "ready":
-                    return JSONResponse(admitted, headers={"Cache-Control": "no-store"})
-            if (
-                c.execute("SELECT count(*) FROM queries WHERE owner=?", (owner,)).fetchone()[0]
-                >= 100
-                or c.execute("SELECT count(*) FROM queries").fetchone()[0] >= 1000
-            ):
-                raise HTTPException(429, "query_history_limit")
-            if not _SLOT.acquire(blocking=False):
-                raise HTTPException(429, "local_vision_busy")
-            try:
+        slot_acquired = False
+        try:
+            with ws.db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                old = c.execute(
+                    "SELECT * FROM queries WHERE owner=? AND id=?", (owner, body.request_id)
+                ).fetchone()
+                if old:
+                    if old["hash"] != payload or old["investigation"] != desk["id"]:
+                        raise HTTPException(409, "request_payload_conflict")
+                    if old["state"] == "done":
+                        return JSONResponse(
+                            json.loads(old["result"]), headers={"Cache-Control": "no-store"}
+                        )
+                    unknown = old["state"] == "unknown"
+                    return QueryControl(
+                        kind="query_control",
+                        state="unknown" if unknown else "pending",
+                        request_id=body.request_id,
+                        retry_after_seconds=None if unknown else 3,
+                        suggested_action=json.loads(old["result"] or "{}").get(
+                            "progress", "本机识别仍在进行，完成后将显示回答。"
+                        ),
+                    ).model_dump(mode="json")
+                if not available():
+                    raise HTTPException(409, "local_vision_not_configured")
+                if cloud:
+                    admitted = admission(source, owner, body, context)
+                    if admitted["kind"] != "ready":
+                        return JSONResponse(admitted, headers={"Cache-Control": "no-store"})
+                if (
+                    c.execute("SELECT count(*) FROM queries WHERE owner=?", (owner,)).fetchone()[0]
+                    >= 100
+                    or c.execute("SELECT count(*) FROM queries").fetchone()[0] >= 1000
+                ):
+                    raise HTTPException(429, "query_history_limit")
+                if not _SLOT.acquire(blocking=False):
+                    raise HTTPException(429, "local_vision_busy")
+                slot_acquired = True
                 c.execute(
                     "INSERT INTO queries(id,investigation,owner,generation,hash,"
                     "state,result,http,updated,input) "
@@ -282,12 +284,70 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                         body.model_dump_json(),
                     ),
                 )
-            except BaseException:
+        except BaseException:
+            if slot_acquired:
                 _SLOT.release()
-                raise
-        threading.Thread(
-            target=work, args=(body, owner, desk, source, context), daemon=True
-        ).start()
+            raise
+        try:
+            threading.Thread(
+                target=work, args=(body, owner, desk, source, context), daemon=True
+            ).start()
+        except Exception:
+            # No worker started, so no inference was dispatched. Keep the request
+            # identity terminal without replacing a concurrent cancel or reset.
+            _SLOT.release()
+            answer = Answer.model_validate(
+                {
+                    "schema_version": "0.1",
+                    "status": "error",
+                    "timebase": "video_absolute_seconds",
+                    "answer": label + "处理未能启动，原问题已保留。",
+                    "events": [],
+                    "unresolved": [],
+                    "followups": [],
+                    "errors": [
+                        {
+                            "code": "worker_start_failed",
+                            "stage": "query",
+                            "message": "后台线程未能启动",
+                            "cause": "worker_start_failed",
+                            "retryable": False,
+                            "suggested_action": "检查本机资源后，显式提交新问题。",
+                            "docs_url": "/docs/errors",
+                            "request_id": body.request_id,
+                        }
+                    ],
+                    "trace": {
+                        "visible": {"channels": [], "segments_reviewed": 0, "evidence_segments": 0},
+                        "debug": None,
+                    },
+                }
+            ).model_dump(mode="json")
+            terminal = {
+                "id": body.request_id,
+                "question": body.question,
+                "response": answer,
+                "mode": "real",
+                "engine": "cloud" if cloud else "local",
+                "video_id": source["id"],
+                "source_generation": source["generation"],
+                "usedContext": bool(body.parent_request_id),
+            }
+            with ws.db() as c:
+                c.execute(
+                    "UPDATE queries SET state='done',result=?,http=200,updated=? "
+                    "WHERE owner=? AND id=? AND investigation=? AND generation=? "
+                    "AND state='running'",
+                    (
+                        json.dumps(terminal, ensure_ascii=False),
+                        time.time(),
+                        owner,
+                        body.request_id,
+                        desk["id"],
+                        body.generation,
+                    ),
+                )
+            raise HTTPException(503, "worker_start_failed") from None
         return QueryControl(
             kind="query_control",
             state="pending",

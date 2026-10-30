@@ -19,6 +19,130 @@ from frameseek.config import Settings
 from frameseek.knowledge_jobs import failure_state
 
 
+def start_failure_fixture(tmp_path):
+    from types import SimpleNamespace
+
+    from frameseek.knowledge_jobs import FixtureKnowledgeJobs
+    from frameseek.workspace import Workspace
+
+    ws = Workspace(tmp_path / "workspace")
+    expires = time.time() + 3600
+    with ws.db() as c:
+        c.execute("INSERT INTO sessions VALUES ('owner','csrf',?)", (expires,))
+        c.execute(
+            "INSERT INTO videos(id,owner,name,bytes,generation,metadata,expires) "
+            "VALUES ('video','owner','synthetic',0,1,?,?)",
+            (json.dumps({"duration": 16}), expires),
+        )
+        c.execute(
+            "INSERT INTO investigations(id,owner,video,title,revision,state,updated,expires) "
+            "VALUES ('desk','owner','video','synthetic',0,?,?,?)",
+            (json.dumps({"epoch": 0}), time.time(), expires),
+        )
+    processor = SimpleNamespace(fixture_only=True)
+    app = SimpleNamespace(state=SimpleNamespace(knowledge_fixture_processor=processor))
+    jobs = FixtureKnowledgeJobs(ws, app, SimpleNamespace(mode="fixture"))
+    return ws, jobs
+
+
+@pytest.mark.parametrize("race", ["none", "cancel", "new_run"])
+def test_base_thread_start_failure_releases_job_without_overwriting_new_state(
+    tmp_path, monkeypatch, race
+):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    import frameseek.knowledge_jobs as job_module
+
+    ws, jobs = start_failure_fixture(tmp_path)
+
+    class FailedThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            with ws.db() as c:
+                if race == "cancel":
+                    c.execute("UPDATE knowledge_jobs SET state='cancelled',error='cancelled'")
+                elif race == "new_run":
+                    c.execute("UPDATE knowledge_jobs SET run_id='newer',state='queued'")
+            raise RuntimeError("thread unavailable")
+
+    monkeypatch.setattr(job_module, "threading", SimpleNamespace(Thread=FailedThread))
+    with pytest.raises(HTTPException) as exc:
+        jobs.start("video", "owner")
+    assert (exc.value.status_code, exc.value.detail) == (503, "worker_start_failed")
+    with ws.db() as c:
+        row = c.execute("SELECT * FROM knowledge_jobs").fetchone()
+    if race == "cancel":
+        assert (row["state"], row["error"]) == ("cancelled", "cancelled")
+    elif race == "new_run":
+        assert (row["state"], row["run_id"]) == ("queued", "newer")
+    else:
+        assert (row["state"], row["error"]) == ("failed", "worker_start_failed")
+        old_run = row["run_id"]
+
+        class DeferredThread:
+            def __init__(self, **_kwargs):
+                pass
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(job_module, "threading", SimpleNamespace(Thread=DeferredThread))
+        assert jobs.start("video", "owner")["state"] == "queued"
+        with ws.db() as c:
+            retried = c.execute("SELECT * FROM knowledge_jobs").fetchone()
+        assert retried["run_id"] != old_run and retried["error"] is None
+
+
+@pytest.mark.parametrize("race", ["none", "cancel", "unknown"])
+def test_supplement_thread_start_failure_preserves_terminal_state_and_idempotency(
+    tmp_path, monkeypatch, race
+):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    import frameseek.knowledge_jobs as job_module
+
+    ws, jobs = start_failure_fixture(tmp_path)
+
+    class Body:
+        request_id = "request"
+        generation = 0
+
+        def model_dump_json(self):
+            return '{"request_id":"request","generation":0}'
+
+    class FailedThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            if race != "none":
+                with ws.db() as c:
+                    c.execute(
+                        "UPDATE knowledge_supplement_jobs SET state=?,error=?",
+                        ("cancelled" if race == "cancel" else "unknown", race),
+                    )
+            raise RuntimeError("thread unavailable")
+
+    monkeypatch.setattr(job_module, "threading", SimpleNamespace(Thread=FailedThread))
+    source, desk, body = {"id": "video", "generation": 1}, {"id": "desk"}, Body()
+    args = (source, desk, "owner", body, "question", {"knowledge_version": "version"})
+    with pytest.raises(HTTPException) as exc:
+        jobs.start_supplement(*args)
+    assert (exc.value.status_code, exc.value.detail) == (503, "worker_start_failed")
+    expected = "failed" if race == "none" else "cancelled" if race == "cancel" else "unknown"
+    status = jobs.supplement_status("desk", "owner", "request")
+    assert status["state"] == expected
+    assert status["error"] == ("worker_start_failed" if race == "none" else race)
+    # A duplicate request returns the persisted terminal record, never a new thread.
+    assert jobs.start_supplement(*args)["state"] == expected
+
+
 def test_stale_workers_leave_terminal_job_states_without_dispatch(tmp_path):
     import sqlite3
     from types import SimpleNamespace

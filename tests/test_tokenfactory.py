@@ -367,6 +367,42 @@ def test_diagnostics_safe_metadata_and_disk_failure_do_not_replay_success(
         assert diagnostic["usage"] == {"completion_tokens": 3}
 
 
+@pytest.mark.parametrize("failure", ["transport_exception", "result_cache_write"])
+def test_unexpected_post_dispatch_failure_is_unknown_and_never_replayed(
+    tmp_path, monkeypatch, caplog, failure
+):
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        if failure == "transport_exception":
+            raise RuntimeError("private-secret-path mock-secret")
+        return httpx.Response(
+            200,
+            json={"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]},
+        )
+
+    p = provider(tmp_path, monkeypatch, respond)
+    p.cache_dir = tmp_path / "model-results"
+    approve(p.ledger, "owner")
+    if failure == "result_cache_write":
+
+        def fail_write(*_args, **_kwargs):
+            raise OSError("private-secret-path")
+
+        monkeypatch.setattr(Path, "write_text", fail_write)
+    with caplog.at_level(logging.INFO, logger="frameseek.agent"):
+        with pytest.raises(AgentError, match="^model_unknown$"):
+            p.chat("text", "secret-prompt", **kwargs())
+        with pytest.raises(AgentError, match="^unknown_attempt_do_not_resend$"):
+            p.chat("text", "secret-prompt", **kwargs())
+    assert len(calls) == 1
+    assert p.ledger.read_attempt("req_tf", "owner")["state"] == "unknown"
+    diagnostic = json.loads(next(p.cache_dir.glob("*.diagnostic.json")).read_text())
+    assert diagnostic["error"] == "internal_error"
+    assert not any(secret in caplog.text for secret in ("private-secret-path", "mock-secret"))
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("failure", ["http503", "length"])
 async def test_full_visual_failure_keeps_diagnosis_and_unknown_without_replay(

@@ -178,6 +178,63 @@ def test_unknown_verification_is_not_resent(tmp_path, monkeypatch):
     assert client.calls == 1
 
 
+@pytest.mark.parametrize("later_outcome", ["error", "unconfirmed", "replay"])
+def test_later_failure_preserves_verified_action_and_unconfirmed_score_records(
+    tmp_path, monkeypatch, later_outcome
+):
+    import frameseek.score_events as module
+
+    xs = [ocr(0), ocr(1), ocr(2, a=103), ocr(3, a=103), ocr(4, a=106), ocr(5, a=106)]
+    monkeypatch.setattr(module, "scan", lambda *args: xs)
+
+    class Client:
+        calls = 0
+
+        def infer(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 2 and later_outcome == "error":
+                raise ValueError("interrupted")
+            return {
+                "text": json.dumps(
+                    {
+                        "confirmed": self.calls == 1,
+                        "is_replay": self.calls == 2 and later_outcome == "replay",
+                        "support_frames": [0, 1],
+                        "reason": "synthetic review",
+                    }
+                )
+            }
+
+    client = Client()
+
+    def write(path, data):
+        path.write_text(json.dumps(data))
+
+    args = (
+        tmp_path,
+        {"id": "v", "metadata": '{"duration":6.0}'},
+        "多少个3分球投入",
+        [{"frames": [x["frame"] for x in xs]}],
+        tmp_path,
+        client,
+        lambda _: None,
+        lambda: True,
+        write,
+        json.loads,
+    )
+    for _ in range(2):
+        answer = answer_scores(*args)
+        assert answer["status"] == "partial"
+        assert [event["action"] for event in answer["events"]] == [
+            "3分投篮命中复核",
+            "记分牌增加3分",
+        ]
+        assert {"v_f0", "v_f1"} <= {frame["frame_id"] for frame in answer["events"][0]["evidence"]}
+        assert "其中 1 次通过动作模型复核" in answer["answer"]
+        assert "1 次尚未通过" in answer["answer"]
+    assert client.calls == 2, "cached and unknown reviews must not be sent again"
+
+
 def test_legacy_continuation_chain_recovers_root_and_rejects_foreign_or_cyclic_context():
     from frameseek.question_context import saved_question
 

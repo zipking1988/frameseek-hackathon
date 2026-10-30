@@ -16,11 +16,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from frameseek.agent import Agent, AgentError, explicit_time_window
+from frameseek.agent import Agent, AgentError, explicit_time_window, query_artifact_key
 from frameseek.attempts import BudgetDenied
 from frameseek.demo import catalog
 from frameseek.local_vision import configured as local_configured
 from frameseek.media import MAX_UPLOAD, MediaError, frames, probe, scene_windows
+from frameseek.question_context import matches_source_generation
 from frameseek.readiness import budget_ready, readiness_report
 from frameseek.schema import Answer
 from frameseek.workspace import Workspace, digest, ident
@@ -431,7 +432,9 @@ def register(app, settings, root, runtime=None, transport=None):
                 raise HTTPException(409, "request_payload_conflict")
         return row
 
-    def index_chat_input(body, owner, *, allow_model_context=False):
+    def index_chat_input(body, owner, *, allow_model_context=None):
+        if allow_model_context is None:
+            allow_model_context = knowledge_enabled()
         desk = ws.owned("investigations", body.investigation_id, owner)
         if json.loads(desk["state"]).get("epoch", 0) != body.generation:
             raise HTTPException(409, "stale_chat_generation")
@@ -444,38 +447,56 @@ def register(app, settings, root, runtime=None, transport=None):
         if body.parent_request_id:
             with ws.db() as c:
                 parent = c.execute(
-                    "SELECT result FROM queries WHERE owner=? AND id=? AND investigation=? "
+                    "SELECT result,input FROM queries WHERE owner=? AND id=? AND investigation=? "
                     "AND generation=? AND state='done'",
                     (owner, body.parent_request_id, desk["id"], body.generation),
                 ).fetchone()
             if not parent:
                 raise HTTPException(409, "invalid_context_anchor")
             prior_result = json.loads(parent["result"])
+            if prior_result.get("video_id") != source["id"]:
+                raise HTTPException(409, "foreign_context_video")
             if (
                 prior_result.get("engine") == "index"
                 and prior_result.get("source_generation") != source["generation"]
             ):
                 raise HTTPException(409, "stale_index_context")
-            if re.fullmatch(
+            if not matches_source_generation(prior_result, source["id"], source["generation"]):
+                raise HTTPException(409, "stale_context_generation")
+            repeat = re.fullmatch(
                 r"\s*(?:继续|还有吗|再找一次|同样条件|same criteria|again)[？?。\s]*",
                 question,
                 re.I,
-            ):
-                if prior_result.get("engine") != "index":
-                    if not allow_model_context:
-                        raise HTTPException(409, "index_context_required")
-                else:
-                    question = (prior_result.get("index_search") or {}).get(
-                        "resolved_question", prior_result["question"]
-                    )
-            if prior_result.get("engine") == "index":
-                from frameseek.question_context import resolve_followup
+            )
+            if repeat and prior_result.get("engine") != "index" and not allow_model_context:
+                raise HTTPException(409, "index_context_required")
+            if prior_result.get("engine") == "index" or allow_model_context:
+                from frameseek.question_context import resolve_followup, saved_question
 
-                previous = (prior_result.get("index_search") or {}).get(
-                    "resolved_question", prior_result["question"]
-                )
+                def load_ancestor(key):
+                    with ws.db() as connection:
+                        row = connection.execute(
+                            "SELECT result,input FROM queries WHERE owner=? AND investigation=? "
+                            "AND id=? AND generation=? AND state='done'",
+                            (owner, desk["id"], key, body.generation),
+                        ).fetchone()
+                    return (
+                        (json.loads(row["result"]), json.loads(row["input"] or "{}"))
+                        if row
+                        else None
+                    )
+
                 try:
-                    question = resolve_followup(question, {"question": previous})
+                    previous = saved_question(
+                        prior_result,
+                        json.loads(parent["input"] or "{}"),
+                        load_ancestor,
+                        video=source["id"],
+                        generation=source["generation"],
+                    )
+                    question = (
+                        previous if repeat else resolve_followup(question, {"question": previous})
+                    )
                 except ValueError as error:
                     raise HTTPException(409, str(error)) from None
         return desk, source, question
@@ -843,6 +864,7 @@ def register(app, settings, root, runtime=None, transport=None):
 
     def run_job(video, owner, generation, analysis=False):
         directory = ws.root / video
+        slot_released = False
         try:
             row = ws.owned("videos", video, owner)
             if row["generation"] != generation:
@@ -872,15 +894,6 @@ def register(app, settings, root, runtime=None, transport=None):
                         "UPDATE videos SET metadata=? WHERE id=? AND generation=? AND deleted=0",
                         (json.dumps(metadata), video, generation),
                     )
-                ws.stage(
-                    video,
-                    owner,
-                    generation,
-                    "ready" if local_configured() else "awaiting_configuration",
-                    total=len(metadata["windows"]),
-                    error=None if local_configured() else "real_blocked",
-                    lease=None,
-                )
                 with ws.db() as c:
                     c.execute(
                         "UPDATE knowledge_jobs SET state='waiting_processor',total=?,updated=? "
@@ -891,39 +904,60 @@ def register(app, settings, root, runtime=None, transport=None):
                     try:
                         if knowledge_jobs.processor():
                             knowledge_jobs.start(video, owner)
-                    except (HTTPException, OSError, ValueError):
+                    except Exception:
                         # Playback preflight remains valid if indexing cannot start.
                         pass
-        except (
-            MediaError,
-            AgentError,
-            BudgetDenied,
-            HTTPException,
-            KeyError,
-            ValueError,
-            TypeError,
-            IndexError,
-            OSError,
-        ):
-            try:
-                import sys
-
-                error = sys.exception()
-                code = (
-                    str(error) if isinstance(error, (MediaError, AgentError)) else "analysis_failed"
-                )
-                ws.stage(video, owner, generation, "failed", error=code[:100], lease=None)
-                with ws.db() as c:
-                    c.execute(
-                        "UPDATE knowledge_jobs SET state='failed',error=?,updated=? "
-                        "WHERE video=? AND generation=? AND state='waiting_probe'",
-                        (code[:100], time.time(), video, generation),
+                # A caller observing the terminal stage must be able to dispatch
+                # its next worker as soon as this worker relinquishes the slot.
+                with worker_lock:
+                    ws.stage(
+                        video,
+                        owner,
+                        generation,
+                        "ready" if local_configured() else "awaiting_configuration",
+                        total=len(metadata["windows"]),
+                        error=None if local_configured() else "real_blocked",
+                        lease=None,
                     )
+                    workers.discard(video)
+                    slot_released = True
+        except Exception as error:
+            try:
+                code = (
+                    str(error)
+                    if isinstance(error, (MediaError, AgentError))
+                    else "unknown"
+                    if analysis
+                    and not isinstance(
+                        error,
+                        (
+                            BudgetDenied,
+                            HTTPException,
+                            KeyError,
+                            ValueError,
+                            TypeError,
+                            IndexError,
+                            OSError,
+                        ),
+                    )
+                    else "analysis_failed"
+                )
+                with worker_lock:
+                    ws.stage(video, owner, generation, "failed", error=code[:100], lease=None)
+                    with ws.db() as c:
+                        c.execute(
+                            "UPDATE knowledge_jobs SET state='failed',error=?,updated=? "
+                            "WHERE video=? AND generation=? AND state='waiting_probe'",
+                            (code[:100], time.time(), video, generation),
+                        )
+                    workers.discard(video)
+                    slot_released = True
             except HTTPException:
                 pass
         finally:
-            with worker_lock:
-                workers.discard(video)
+            if not slot_released:
+                with worker_lock:
+                    workers.discard(video)
 
     def dispatch(video, owner, analysis=False):
         with worker_lock:
@@ -951,9 +985,27 @@ def register(app, settings, root, runtime=None, transport=None):
                 if lease.rowcount != 1:
                     raise HTTPException(409, "job_running")
             workers.add(video)
-        threading.Thread(
-            target=run_job, args=(video, owner, row["generation"], analysis), daemon=True
-        ).start()
+        try:
+            threading.Thread(
+                target=run_job, args=(video, owner, row["generation"], analysis), daemon=True
+            ).start()
+        except Exception:
+            with worker_lock:
+                workers.discard(video)
+            with ws.db() as c:
+                c.execute(
+                    "UPDATE jobs SET state='failed',error='worker_start_failed',"
+                    "lease=NULL,updated=? "
+                    "WHERE video=? AND generation=? AND state='queued'",
+                    (time.time(), video, row["generation"]),
+                )
+                c.execute(
+                    "UPDATE knowledge_jobs SET state='failed',error='worker_start_failed',"
+                    "updated=? "
+                    "WHERE video=? AND generation=? AND state='waiting_probe'",
+                    (time.time(), video, row["generation"]),
+                )
+            raise HTTPException(503, "worker_start_failed") from None
 
     @router.get("/api/session")
     def session(request: Request, response: Response):
@@ -1358,7 +1410,7 @@ def register(app, settings, root, runtime=None, transport=None):
             raise HTTPException(404, "not_found")
         return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
-    def prior(body, owner, desk):
+    def prior(body, owner, desk, source=None):
         if body.parent_request_id is None:
             return None
         with ws.db() as c:
@@ -1370,8 +1422,15 @@ def register(app, settings, root, runtime=None, transport=None):
         if not row:
             raise HTTPException(409, "invalid_context_anchor")
         result = json.loads(row["result"])
+        if result.get("video_id") != desk["video"]:
+            raise HTTPException(409, "foreign_context_video")
+        source = source or ws.owned("videos", desk["video"], owner)
+        if not matches_source_generation(result, source["id"], source["generation"]):
+            raise HTTPException(409, "stale_context_generation")
         if not result["response"]["events"]:
             raise HTTPException(409, "context_has_no_verified_anchor")
+        if any(event["video_id"] != source["id"] for event in result["response"]["events"]):
+            raise HTTPException(409, "foreign_context_video")
         return {"question": result["question"], "events": result["response"]["events"]}
 
     @router.get("/api/investigations/{key}/requests")
@@ -1558,6 +1617,7 @@ def register(app, settings, root, runtime=None, transport=None):
                 }
         if not knowledge_enabled() and ws.job(source["id"], owner)["state"] != "ready":
             raise HTTPException(409, "source_not_ready")
+        model_continuation = False
         if body.parent_request_id:
             with ws.db() as connection:
                 saved = json.loads(
@@ -1566,41 +1626,7 @@ def register(app, settings, root, runtime=None, transport=None):
                         (owner, body.parent_request_id, desk["id"]),
                     ).fetchone()["result"]
                 )
-            if saved.get("video_id") != source["id"]:
-                raise HTTPException(409, "foreign_context_video")
-            if saved.get("source_generation", source["generation"]) != source["generation"]:
-                raise HTTPException(409, "stale_context_generation")
-        model_continuation = False
-        if body.parent_request_id:
-            from frameseek.question_context import resolve_followup, saved_question
-
-            def load_ancestor(key):
-                with ws.db() as connection:
-                    row = connection.execute(
-                        "SELECT result,input FROM queries WHERE owner=? AND investigation=? "
-                        "AND id=? AND generation=? AND state='done'",
-                        (owner, desk["id"], key, body.generation),
-                    ).fetchone()
-                return (
-                    (json.loads(row["result"]), json.loads(row["input"] or "{}")) if row else None
-                )
-
-            first = load_ancestor(body.parent_request_id)
-            if first is None:
-                raise HTTPException(409, "invalid_context_anchor")
-            try:
-                original = saved_question(
-                    saved,
-                    first[1],
-                    load_ancestor,
-                    video=source["id"],
-                    generation=source["generation"],
-                )
-            except ValueError as error:
-                raise HTTPException(409, str(error)) from None
-            resolved = resolve_followup(question, {"question": original})
-            model_continuation = resolved != question and saved.get("engine") != "index"
-            question = resolved
+            model_continuation = question != body.question and saved.get("engine") != "index"
         if knowledge_enabled():
             if needs_audio(question):
                 return {
@@ -1839,7 +1865,7 @@ def register(app, settings, root, runtime=None, transport=None):
             parent = json.loads(row["result"])
             if parent.get("video_id") != source["id"]:
                 raise HTTPException(409, "foreign_context_video")
-            if parent.get("source_generation", source["generation"]) != source["generation"]:
+            if not matches_source_generation(parent, source["id"], source["generation"]):
                 raise HTTPException(409, "stale_context_generation")
         with ws.db() as c:
             previous = c.execute(
@@ -1875,6 +1901,27 @@ def register(app, settings, root, runtime=None, transport=None):
     def cancel_knowledge_supplement(key: str, request_id: Key, owner=owner_dependency):
         return {"state": knowledge_jobs.cancel_supplement(key, owner, request_id)}
 
+    def query_progress(connection, desk, owner, row):
+        source = connection.execute(
+            "SELECT generation FROM videos WHERE id=? AND owner=? AND deleted=0 AND expires>?",
+            (desk["video"], owner, time.time()),
+        ).fetchone()
+        if not source:
+            return None
+        key = query_artifact_key(
+            desk["video"], source["generation"], owner, desk["id"], row["id"], row["hash"]
+        )
+        path = ws.root / desk["video"] / ("query_" + key + "_verified.json")
+        try:
+            answer = Answer.model_validate_json(path.read_text()).model_dump(mode="json")
+        except (OSError, ValueError):
+            return None
+        if answer["status"] != "partial" or not all(
+            event["video_id"] == desk["video"] for event in answer["events"]
+        ):
+            return None
+        return answer, source["generation"]
+
     @router.post("/api/investigations/{key}/requests/{request_id}/cancel")
     def cancel_query(key: str, request_id: Key, owner=owner_dependency):
         desk = ws.owned("investigations", key, owner)
@@ -1897,11 +1944,9 @@ def register(app, settings, root, runtime=None, transport=None):
                 message="查找已取消",
                 suggested_action="如需继续，请显式提交新问题。",
             )
-            progress = ws.root / desk["video"] / (request_id + "_verified.json")
-            if progress.is_file():
-                verified = Answer.model_validate_json(progress.read_text()).model_dump(mode="json")
-                if all(event["video_id"] == desk["video"] for event in verified["events"]):
-                    terminal["response"] = verified
+            progress = query_progress(c, desk, owner, row)
+            if progress:
+                terminal["response"], terminal["source_generation"] = progress
             c.execute(
                 "UPDATE queries SET state='done',result=?,http=200,updated=? "
                 "WHERE id=? AND owner=?",
@@ -1921,82 +1966,88 @@ def register(app, settings, root, runtime=None, transport=None):
         generation = json.loads(desk["state"]).get("epoch", 0)
         if generation != body.generation:
             raise HTTPException(409, "stale_chat_generation")
-        context = prior(body, owner, desk)
+        source = ws.owned("videos", desk["video"], owner)
+        source_generation = source["generation"]
+        context = prior(body, owner, desk, source)
         if prepare(body, owner, check_budget=False)["kind"] != "ready":
             raise HTTPException(409, "clarification_required")
         payload_hash = digest(body.model_dump_json())
-        with ws.db() as c:
-            c.execute("BEGIN IMMEDIATE")
-            old = c.execute(
-                "SELECT * FROM queries WHERE id=? AND owner=?", (body.request_id, owner)
-            ).fetchone()
-            if old:
-                if old["hash"] != payload_hash:
-                    raise HTTPException(409, "request_payload_conflict")
-                if old["state"] == "done":
-                    return JSONResponse(json.loads(old["result"]), status_code=old["http"])
-                return JSONResponse(
-                    {
-                        "kind": "query_control",
-                        "state": "pending" if old["state"] == "running" else "unknown",
-                        "request_id": body.request_id,
-                        "retry_after_seconds": 3 if old["state"] == "running" else None,
-                        "suggested_action": "同一请求恢复结果"
-                        if old["state"] == "running"
-                        else "调用结果不确定，请勿自动重发",
-                    },
-                    status_code=202 if old["state"] == "running" else 409,
-                    headers={"Retry-After": "3"} if old["state"] == "running" else None,
-                )
-            if (
-                c.execute("SELECT count(*) FROM queries WHERE owner=?", (owner,)).fetchone()[0]
-                >= 100
-                or c.execute("SELECT count(*) FROM queries").fetchone()[0] >= 1000
-            ):
-                raise HTTPException(429, "query_history_limit")
-            # A user-submitted new request explicitly ends an older unknown
-            # execution; it never redispatches the old attempt ID.
-            unknowns = c.execute(
-                "SELECT id,input FROM queries WHERE investigation=? "
-                "AND owner=? AND generation=? AND state='unknown'",
-                (desk["id"], owner, generation),
-            ).fetchall()
-            for old_query in unknowns:
-                terminal = unknown_final(old_query["id"])
-                terminal["video_id"] = desk["video"]
-                progress = ws.root / desk["video"] / (old_query["id"] + "_verified.json")
-                if progress.is_file():
-                    verified = Answer.model_validate_json(progress.read_text()).model_dump(
-                        mode="json"
+        slot_held = False
+        try:
+            with ws.db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                old = c.execute(
+                    "SELECT * FROM queries WHERE id=? AND owner=?", (body.request_id, owner)
+                ).fetchone()
+                if old:
+                    if old["hash"] != payload_hash:
+                        raise HTTPException(409, "request_payload_conflict")
+                    if old["state"] == "done":
+                        return JSONResponse(json.loads(old["result"]), status_code=old["http"])
+                    return JSONResponse(
+                        {
+                            "kind": "query_control",
+                            "state": "pending" if old["state"] == "running" else "unknown",
+                            "request_id": body.request_id,
+                            "retry_after_seconds": 3 if old["state"] == "running" else None,
+                            "suggested_action": "同一请求恢复结果"
+                            if old["state"] == "running"
+                            else "调用结果不确定，请勿自动重发",
+                        },
+                        status_code=202 if old["state"] == "running" else 409,
+                        headers={"Retry-After": "3"} if old["state"] == "running" else None,
                     )
-                    if all(event["video_id"] == desk["video"] for event in verified["events"]):
-                        terminal["response"] = verified
-                if old_query["input"]:
-                    terminal["question"] = json.loads(old_query["input"])["question"]
+                if (
+                    c.execute("SELECT count(*) FROM queries WHERE owner=?", (owner,)).fetchone()[0]
+                    >= 100
+                    or c.execute("SELECT count(*) FROM queries").fetchone()[0] >= 1000
+                ):
+                    raise HTTPException(429, "query_history_limit")
+                # A user-submitted new request explicitly ends an older unknown
+                # execution; it never redispatches the old attempt ID.
+                unknowns = c.execute(
+                    "SELECT id,input,hash FROM queries WHERE investigation=? "
+                    "AND owner=? AND generation=? AND state='unknown'",
+                    (desk["id"], owner, generation),
+                ).fetchall()
+                for old_query in unknowns:
+                    terminal = unknown_final(old_query["id"])
+                    terminal["video_id"] = desk["video"]
+                    progress = query_progress(c, desk, owner, old_query)
+                    if progress:
+                        terminal["response"], terminal["source_generation"] = progress
+                    if old_query["input"]:
+                        terminal["question"] = json.loads(old_query["input"])["question"]
+                    c.execute(
+                        "UPDATE queries SET state='done',result=?,http=? WHERE id=? AND owner=?",
+                        (
+                            json.dumps(terminal),
+                            200 if terminal["response"]["status"] == "partial" else 502,
+                            old_query["id"],
+                            owner,
+                        ),
+                    )
+                if not agent.slots.acquire(blocking=False):
+                    raise HTTPException(429, "query_capacity")
+                slot_held = True
                 c.execute(
-                    "UPDATE queries SET state='done',result=?,http=? WHERE id=? AND owner=?",
+                    "INSERT INTO queries(id,investigation,owner,generation,hash,"
+                    "state,updated,input) "
+                    "VALUES(?,?,?,?,?,'running',?,?)",
                     (
-                        json.dumps(terminal),
-                        200 if terminal["response"]["status"] == "partial" else 502,
-                        old_query["id"],
+                        body.request_id,
+                        desk["id"],
                         owner,
+                        generation,
+                        payload_hash,
+                        time.time(),
+                        body.model_dump_json(),
                     ),
                 )
-            if not agent.slots.acquire(blocking=False):
-                raise HTTPException(429, "query_capacity")
-            c.execute(
-                "INSERT INTO queries(id,investigation,owner,generation,hash,state,updated,input) "
-                "VALUES(?,?,?,?,?,'running',?,?)",
-                (
-                    body.request_id,
-                    desk["id"],
-                    owner,
-                    generation,
-                    payload_hash,
-                    time.time(),
-                    body.model_dump_json(),
-                ),
-            )
+        except BaseException:
+            if slot_held:
+                agent.slots.release()
+            raise
         status = 200
         try:
 
@@ -2004,6 +2055,8 @@ def register(app, settings, root, runtime=None, transport=None):
                 active = ws.owned("investigations", desk["id"], owner)
                 if json.loads(active["state"]).get("epoch", 0) != generation:
                     raise HTTPException(409, "stale_chat_generation")
+                if not ws.valid_generation(desk["video"], owner, source_generation):
+                    raise HTTPException(409, "stale_video_generation")
                 with ws.db() as c:
                     request = c.execute(
                         "SELECT state FROM queries WHERE id=? AND owner=?",
@@ -2013,21 +2066,25 @@ def register(app, settings, root, runtime=None, transport=None):
                     raise AgentError("query_cancelled")
 
             answer = agent.query(
-                desk["video"], owner, body.question, body.request_id, context, guard=chat_guard
+                desk["video"],
+                owner,
+                body.question,
+                body.request_id,
+                context,
+                guard=chat_guard,
+                investigation_id=desk["id"],
+                payload_hash=payload_hash,
+                source_generation=source_generation,
             )
-        except (
-            AgentError,
-            BudgetDenied,
-            ValueError,
-            KeyError,
-            HTTPException,
-            TypeError,
-            IndexError,
-        ) as error:
+        except Exception as error:
             code = (
                 "budget_blocked"
                 if isinstance(error, BudgetDenied)
-                else (str(error) if isinstance(error, AgentError) else "analysis_failed")
+                else str(error)
+                if isinstance(error, AgentError)
+                else "analysis_failed"
+                if isinstance(error, (ValueError, KeyError, HTTPException, TypeError, IndexError))
+                else "model_unknown"
             )
             if code in {"model_unknown", "unknown_attempt_do_not_resend"}:
                 with ws.db() as c:
@@ -2040,6 +2097,14 @@ def register(app, settings, root, runtime=None, transport=None):
                         "SELECT state,result,http FROM queries WHERE id=? AND owner=?",
                         (body.request_id, owner),
                     ).fetchone()
+                # An unexpected failure can arrive after reset or deletion, just like
+                # a successful result. Do not publish it into a changed investigation.
+                current = ws.owned("investigations", desk["id"], owner)
+                if json.loads(current["state"]).get("epoch", 0) != generation:
+                    raise HTTPException(409, "stale_chat_generation") from None
+                current_source = ws.owned("videos", desk["video"], owner)
+                if current_source["generation"] != source_generation:
+                    raise HTTPException(409, "stale_video_generation") from None
                 if cancelled and cancelled["state"] == "done":
                     return JSONResponse(
                         json.loads(cancelled["result"]), status_code=cancelled["http"]
@@ -2110,26 +2175,64 @@ def register(app, settings, root, runtime=None, transport=None):
             "response": answer,
             "mode": "real",
             "video_id": desk["video"],
+            "source_generation": source_generation,
             "usedContext": bool(context),
         }
         with ws.db() as c:
             c.execute("BEGIN IMMEDIATE")
-            previous = c.execute(
-                "SELECT state,result,http FROM queries WHERE id=? AND owner=?",
-                (body.request_id, owner),
+            latest_desk = c.execute(
+                "SELECT video,state,deleted,expires FROM investigations WHERE id=? AND owner=?",
+                (desk["id"], owner),
             ).fetchone()
-            if previous and previous["state"] == "done":
-                return JSONResponse(json.loads(previous["result"]), status_code=previous["http"])
-            c.execute(
-                "UPDATE queries SET state='done',result=?,http=?,updated=? WHERE id=? AND owner=?",
-                (
-                    json.dumps(result, ensure_ascii=False),
-                    status,
-                    time.time(),
-                    body.request_id,
-                    owner,
-                ),
-            )
+            session = c.execute("SELECT expires FROM sessions WHERE id=?", (owner,)).fetchone()
+            if not latest_desk or not session:
+                raise HTTPException(404, "not_found")
+            if (
+                latest_desk["deleted"]
+                or latest_desk["expires"] <= time.time()
+                or session["expires"] <= time.time()
+            ):
+                raise HTTPException(410, "expired_or_deleted")
+            if (
+                latest_desk["video"] != desk["video"]
+                or json.loads(latest_desk["state"]).get("epoch", 0) != generation
+            ):
+                raise HTTPException(409, "stale_chat_generation")
+            current_source = c.execute(
+                "SELECT generation FROM videos WHERE id=? AND owner=? AND deleted=0 AND expires>?",
+                (desk["video"], owner, time.time()),
+            ).fetchone()
+            stale_source = not current_source or current_source["generation"] != source_generation
+            if stale_source:
+                c.execute(
+                    "UPDATE queries SET state='unknown',updated=? "
+                    "WHERE id=? AND owner=? AND state='running'",
+                    (time.time(), body.request_id, owner),
+                )
+            else:
+                previous = c.execute(
+                    "SELECT state,result,http FROM queries WHERE id=? AND owner=?",
+                    (body.request_id, owner),
+                ).fetchone()
+                if previous and previous["state"] == "done":
+                    return JSONResponse(
+                        json.loads(previous["result"]), status_code=previous["http"]
+                    )
+                if not previous or previous["state"] != "running":
+                    raise HTTPException(409, "stale_chat_generation")
+                c.execute(
+                    "UPDATE queries SET state='done',result=?,http=?,updated=? "
+                    "WHERE id=? AND owner=? AND state='running'",
+                    (
+                        json.dumps(result, ensure_ascii=False),
+                        status,
+                        time.time(),
+                        body.request_id,
+                        owner,
+                    ),
+                )
+        if stale_source:
+            raise HTTPException(409, "stale_video_generation")
         return JSONResponse(result, status_code=status)
 
     from frameseek.local_routes import install_local_routes

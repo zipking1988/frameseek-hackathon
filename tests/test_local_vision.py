@@ -85,6 +85,110 @@ async def test_local_chat_ownership_idempotence_cancellation_and_zero_paid_calls
         await client.aclose()
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("engine", ["local", "cloud"])
+@pytest.mark.parametrize("cancel_during_start", [False, True])
+async def test_chat_thread_start_failure_releases_slot_and_preserves_terminal_result(
+    tmp_path, monkeypatch, engine, cancel_during_start
+):
+    import json
+    from types import SimpleNamespace
+
+    import frameseek.local_routes as local
+    from frameseek.cloud_vision import CloudVision
+
+    monkeypatch.setattr(local, "configured", lambda: ("test-interpreter", "test-model"))
+    monkeypatch.setattr(CloudVision, "configured", lambda self: True)
+    monkeypatch.setattr(CloudVision, "prepare", lambda self, *args: {"kind": "ready"})
+    app, client, video, desk, session, index = await setup_index_page(tmp_path, monkeypatch)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "start-failure",
+        "generation": 0,
+        "question": "test-only request",
+    }
+    cancelled = {"id": body["request_id"], "result": "cancelled-first"}
+
+    class FailedThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            if cancel_during_start:
+                with app.state.workspace.db() as c:
+                    c.execute(
+                        "UPDATE queries SET state='done',result=? WHERE id=?",
+                        (json.dumps(cancelled), body["request_id"]),
+                    )
+            raise RuntimeError("thread unavailable")
+
+    monkeypatch.setattr(local, "threading", SimpleNamespace(Thread=FailedThread))
+    try:
+        response = await client.post(f"/api/{engine}-chat", json=body)
+        assert response.status_code == 503 and response.json()["detail"] == "worker_start_failed"
+        assert local._SLOT.acquire(blocking=False)
+        local._SLOT.release()
+        recovered = (await client.post(f"/api/{engine}-chat", json=body)).json()
+        if cancel_during_start:
+            assert recovered == cancelled
+        else:
+            answer = Answer.model_validate(recovered["response"])
+            assert answer.status == "error" and answer.errors[0].code == "worker_start_failed"
+            assert recovered["engine"] == engine and recovered["video_id"] == video
+        with app.state.agent.ledger._connect() as c:
+            assert c.execute("SELECT count(*) FROM attempts").fetchone()[0] == 0
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("engine", ["local", "cloud"])
+async def test_chat_transaction_failure_releases_slot(tmp_path, monkeypatch, engine):
+    from contextlib import contextmanager
+
+    import frameseek.local_routes as local
+    from frameseek.cloud_vision import CloudVision
+
+    monkeypatch.setattr(local, "configured", lambda: ("test-interpreter", "test-model"))
+    monkeypatch.setattr(CloudVision, "configured", lambda self: True)
+    monkeypatch.setattr(CloudVision, "prepare", lambda self, *args: {"kind": "ready"})
+    app, client, video, desk, session, index = await setup_index_page(tmp_path, monkeypatch)
+    ws = app.state.workspace
+    original_db = ws.db
+
+    @contextmanager
+    def failed_commit():
+        with original_db() as connection:
+            inserted = []
+            connection.set_trace_callback(
+                lambda statement: (
+                    inserted.append(True) if statement.startswith("INSERT INTO queries(") else None
+                )
+            )
+            yield connection
+            if inserted:
+                raise OSError("simulated transaction failure")
+
+    monkeypatch.setattr(ws, "db", failed_commit)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "commit-failure",
+        "generation": 0,
+        "question": "test-only request",
+    }
+    try:
+        with pytest.raises(OSError, match="simulated transaction failure"):
+            await client.post(f"/api/{engine}-chat", json=body)
+        assert local._SLOT.acquire(blocking=False)
+        local._SLOT.release()
+        with original_db() as c:
+            assert c.execute("SELECT count(*) FROM queries").fetchone()[0] == 0
+        with app.state.agent.ledger._connect() as c:
+            assert c.execute("SELECT count(*) FROM attempts").fetchone()[0] == 0
+    finally:
+        await client.aclose()
+
+
 def test_actual_local_pipeline_shape_cache_and_reference_validation(tmp_path, monkeypatch):
     import json
 

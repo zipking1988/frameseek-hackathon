@@ -10,7 +10,15 @@ import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from frameseek.agent import AgentError, Endpoint, Provider, Runtime, checked_embeddings
+from frameseek.agent import (
+    AgentError,
+    Endpoint,
+    Provider,
+    Runtime,
+    checked_embeddings,
+    progress_answer,
+    query_artifact_key,
+)
 from frameseek.api import create_app
 from frameseek.attempts import ApprovedBudget, AttemptLedger, BudgetDenied
 from frameseek.config import Settings
@@ -153,6 +161,59 @@ async def setup_real(
     assert detail["job"]["state"] == "ready", detail
     desk = (await client.post("/api/investigations", json={"video_id": video})).json()
     return app, client, video, desk
+
+
+@pytest.mark.anyio
+async def test_analyze_waits_for_preflight_worker_to_release_terminal_slot(tmp_path, monkeypatch):
+    import frameseek.api
+    import frameseek.routes
+
+    monkeypatch.setenv("FS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(frameseek.api, "load_runtime", configuration)
+    monkeypatch.setattr(frameseek.routes, "probe", lambda _directory: {})
+    monkeypatch.setattr(
+        frameseek.routes,
+        "scene_windows",
+        lambda *_args: {"duration": 1, "windows": [{"start": 0, "end": 1}]},
+    )
+    monkeypatch.setattr(frameseek.routes, "frames", lambda *_args: [])
+    app = create_app(Settings(mode="real"))
+    terminal_written, release, admission_started = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    original_stage = app.state.workspace.stage
+
+    def slow_stage(video, owner, generation, state, **kwargs):
+        original_stage(video, owner, generation, state, **kwargs)
+        if state == "awaiting_configuration":
+            terminal_written.set()
+            release.wait(5)
+
+    monkeypatch.setattr(app.state.workspace, "stage", slow_stage)
+    monkeypatch.setattr(app.state.agent, "admit_ingest", lambda *_args: admission_started.set())
+    monkeypatch.setattr(app.state.agent, "ingest", lambda *_args, **_kwargs: None)
+    client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    client.headers["x-fs-csrf"] = (await client.get("/api/session")).json()["csrf"]
+    try:
+        uploaded = await client.post(
+            "/api/videos", content=b"synthetic", headers={"content-type": "video/mp4"}
+        )
+        video = uploaded.json()["id"]
+        assert await asyncio.to_thread(terminal_written.wait, 2)
+        assert (await client.get(f"/api/videos/{video}")).json()["job"]["state"] == (
+            "awaiting_configuration"
+        )
+        analyze = asyncio.create_task(client.post(f"/api/videos/{video}/analyze"))
+        assert await asyncio.to_thread(admission_started.wait, 2)
+        await asyncio.sleep(0.1)
+        assert not analyze.done()
+        release.set()
+        assert (await analyze).status_code == 202
+    finally:
+        release.set()
+        await client.aclose()
 
 
 @pytest.mark.anyio
@@ -313,6 +374,440 @@ async def test_cancel_stops_later_dispatch_and_preserves_terminal_result(tmp_pat
         assert len(calls) == before
     finally:
         release.set()
+        await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("case", ["matching", "other_investigation", "other_generation", "legacy"])
+async def test_cancel_only_recovers_progress_for_the_same_query_identity(
+    tmp_path, monkeypatch, case
+):
+    calls = []
+    app, client, video, desk = await setup_real(tmp_path, monkeypatch, calls)
+    ws = app.state.workspace
+    session = (await client.get("/api/session")).json()
+    owner = session["owner_id"]
+    source = ws.owned("videos", video, owner)
+    frame = json.loads(source["manifest"])["segments"][0]["frames"][0]
+    evidence = progress_answer(
+        video,
+        [{"frame_ids": [frame["frame_id"]], "statement": "已验证画面", "start": 0, "end": 18}],
+        {frame["frame_id"]: frame},
+        1,
+    )
+    started, release = threading.Event(), threading.Event()
+    write_progress = True
+
+    def paused_query(*args, **kwargs):
+        if write_progress:
+            key = query_artifact_key(
+                video,
+                source["generation"],
+                owner,
+                kwargs["investigation_id"],
+                args[3],
+                kwargs["payload_hash"],
+            )
+            name = (
+                args[3] + "_verified.json"
+                if case == "legacy"
+                else "query_" + key + "_verified.json"
+            )
+            (ws.root / video / name).write_text(json.dumps(evidence, ensure_ascii=False))
+        started.set()
+        release.wait(5)
+        raise AgentError("query_cancelled")
+
+    monkeypatch.setattr(app.state.agent, "query", paused_query)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_scoped_progress",
+        "generation": 0,
+        "question": "原问题",
+    }
+    tasks = []
+    try:
+        tasks.append(asyncio.create_task(client.post("/api/chat", json=body)))
+        assert await asyncio.to_thread(started.wait, 2)
+        if case == "other_investigation":
+            assert (await client.delete(f"/api/investigations/{desk['id']}")).status_code == 204
+            replacement = (
+                await client.post("/api/investigations", json={"video_id": video})
+            ).json()
+            body = {**body, "investigation_id": replacement["id"], "question": "不同问题"}
+            write_progress = False
+            started.clear()
+            tasks.append(asyncio.create_task(client.post("/api/chat", json=body)))
+            assert await asyncio.to_thread(started.wait, 2)
+        elif case == "other_generation":
+            with ws.db() as c:
+                c.execute("UPDATE videos SET generation=generation+1 WHERE id=?", (video,))
+        result = await client.post(
+            f"/api/investigations/{body['investigation_id']}/requests/{body['request_id']}/cancel"
+        )
+        assert result.status_code == 200
+        if case == "matching":
+            assert result.json()["response"] == evidence
+            assert result.json()["source_generation"] == source["generation"]
+        else:
+            assert result.json()["response"]["errors"][0]["code"] == "query_cancelled"
+    finally:
+        release.set()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_new_query_recovers_only_matching_unknown_progress(tmp_path, monkeypatch):
+    calls = []
+    app, client, video, desk = await setup_real(tmp_path, monkeypatch, calls)
+    ws = app.state.workspace
+    owner = (await client.get("/api/session")).json()["owner_id"]
+    source = ws.owned("videos", video, owner)
+    frame = json.loads(source["manifest"])["segments"][0]["frames"][0]
+    evidence = progress_answer(
+        video,
+        [{"frame_ids": [frame["frame_id"]], "statement": "已验证画面", "start": 0, "end": 18}],
+        {frame["frame_id"]: frame},
+        1,
+    )
+
+    def fake_query(*args, **kwargs):
+        if args[3] == "req_unknown_progress":
+            key = query_artifact_key(
+                video, source["generation"], owner, desk["id"], args[3], kwargs["payload_hash"]
+            )
+            (ws.root / video / ("query_" + key + "_verified.json")).write_text(
+                json.dumps(evidence, ensure_ascii=False)
+            )
+            raise AgentError("model_unknown")
+        return {
+            "schema_version": "0.1",
+            "status": "no_result",
+            "timebase": "video_absolute_seconds",
+            "answer": "没有新的证据",
+            "events": [],
+            "unresolved": [],
+            "followups": [],
+            "errors": [],
+            "trace": {
+                "visible": {"channels": [], "segments_reviewed": 0, "evidence_segments": 0},
+                "debug": None,
+            },
+        }
+
+    monkeypatch.setattr(app.state.agent, "query", fake_query)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_unknown_progress",
+        "generation": 0,
+        "question": "原问题",
+    }
+    try:
+        response = await client.post("/api/chat", json=body)
+        assert response.status_code == 409 and response.json()["state"] == "unknown"
+        assert (
+            await client.post("/api/chat", json={**body, "request_id": "req_next"})
+        ).status_code == 200
+        records = (await client.get(f"/api/investigations/{desk['id']}/requests")).json()["items"]
+        old = next(row for row in records if row["id"] == body["request_id"])
+        assert old["result"]["response"] == evidence
+        assert old["result"]["source_generation"] == source["generation"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_reused_request_id_does_not_overwrite_old_frames_or_replay_attempt(
+    tmp_path, monkeypatch
+):
+    import frameseek.agent as agent_module
+
+    calls = []
+    app, client, video, desk = await setup_real(tmp_path, monkeypatch, calls)
+    original_frames = agent_module.frames
+    extracted = []
+
+    def remember_frames(*args, **kwargs):
+        result = original_frames(*args, **kwargs)
+        extracted.append(result)
+        return result
+
+    monkeypatch.setattr(agent_module, "frames", remember_frames)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_reused_frames",
+        "generation": 0,
+        "question": "00:00-00:02 画面里有什么？",
+    }
+    try:
+        first = await client.post("/api/chat", json=body)
+        assert first.status_code == 200 and first.json()["response"]["events"]
+        assert len(extracted) == 1 and extracted[0]
+        old_files = {
+            f["file"]: (app.state.workspace.root / video / "frames" / f["file"]).read_bytes()
+            for f in extracted[0]
+        }
+        before = len(calls)
+        assert (await client.delete(f"/api/investigations/{desk['id']}")).status_code == 204
+        next_desk = (await client.post("/api/investigations", json={"video_id": video})).json()
+        await client.post("/api/chat", json={**body, "investigation_id": next_desk["id"]})
+        assert len(extracted) == 2 and extracted[1]
+        assert set(old_files).isdisjoint(f["file"] for f in extracted[1])
+        assert all(
+            (app.state.workspace.root / video / "frames" / name).read_bytes() == data
+            for name, data in old_files.items()
+        )
+        assert len(calls) == before, "existing attempt identity must not be dispatched again"
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_real_and_local_followups_reject_stale_source_generation(
+    tmp_path, monkeypatch, legacy
+):
+    import frameseek.local_routes as local_routes
+
+    calls = []
+    app, client, video, desk = await setup_real(tmp_path, monkeypatch, calls)
+    monkeypatch.setattr(local_routes, "configured", lambda: ("test-python", "test-model"))
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_context_generation",
+        "generation": 0,
+        "question": "纸箱在哪里？",
+    }
+    try:
+        parent = (await client.post("/api/chat", json=body)).json()
+        assert parent["response"]["events"] and parent["source_generation"] == 1
+        if legacy:
+            parent.pop("source_generation")
+            with app.state.workspace.db() as c:
+                c.execute(
+                    "UPDATE queries SET result=? WHERE id=?",
+                    (json.dumps(parent), body["request_id"]),
+                )
+        follow = {
+            **body,
+            "request_id": "req_context_followup",
+            "question": "画面里是什么颜色？",
+            "parent_request_id": body["request_id"],
+        }
+        for endpoint in ("/api/chat/prepare", "/api/local-chat/prepare"):
+            result = await client.post(endpoint, json=follow)
+            assert result.status_code == 200 and result.json()["kind"] == "ready", result.text
+        before = len(calls)
+        with app.state.workspace.db() as c:
+            c.execute("UPDATE videos SET generation=generation+1 WHERE id=?", (video,))
+        for endpoint in ("/api/chat/prepare", "/api/local-chat/prepare"):
+            blocked = await client.post(endpoint, json=follow)
+            assert (
+                blocked.status_code == 409
+                and blocked.json()["detail"] == "stale_context_generation"
+            )
+        history = (await client.get(f"/api/investigations/{desk['id']}/requests")).json()["items"]
+        assert (
+            next(item for item in history if item["id"] == body["request_id"])["result"] == parent
+        )
+        assert len(calls) == before
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancel_query_first", [False, True])
+@pytest.mark.parametrize("unknown_failure", [False, True])
+async def test_query_result_after_source_generation_changes_is_not_published(
+    tmp_path, monkeypatch, cancel_query_first, unknown_failure
+):
+    calls = []
+    app, client, video, desk = await setup_real(tmp_path, monkeypatch, calls)
+    started, release = threading.Event(), threading.Event()
+
+    def late_query(*_args, **_kwargs):
+        started.set()
+        release.wait(5)
+        if unknown_failure:
+            raise AgentError("model_unknown")
+        return {
+            "schema_version": "0.1",
+            "status": "no_result",
+            "timebase": "video_absolute_seconds",
+            "answer": "迟到的结果",
+            "events": [],
+            "unresolved": [],
+            "followups": [],
+            "errors": [],
+            "trace": {
+                "visible": {"channels": [], "segments_reviewed": 0, "evidence_segments": 0},
+                "debug": None,
+            },
+        }
+
+    monkeypatch.setattr(app.state.agent, "query", late_query)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_source_changed",
+        "generation": 0,
+        "question": "纸箱在哪里？",
+    }
+    try:
+        pending = asyncio.create_task(client.post("/api/chat", json=body))
+        assert await asyncio.to_thread(started.wait, 2)
+        assert (await client.post(f"/api/videos/{video}/cancel")).status_code == 202
+        cancelled = None
+        if cancel_query_first:
+            cancelled = await client.post(
+                f"/api/investigations/{desk['id']}/requests/{body['request_id']}/cancel"
+            )
+            assert cancelled.status_code == 200
+        release.set()
+        response = await pending
+        assert response.status_code == 409 and response.json()["detail"] == "stale_video_generation"
+        records = (await client.get(f"/api/investigations/{desk['id']}/requests")).json()["items"]
+        row = next(item for item in records if item["id"] == body["request_id"])
+        if cancel_query_first:
+            assert row["state"] == "done" and row["result"] == cancelled.json()
+        else:
+            assert row["state"] == "unknown" and not row["result"]
+    finally:
+        release.set()
+        await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["unknown", "cancel", "reset", "delete"])
+@pytest.mark.parametrize("failure", [RuntimeError, OSError])
+async def test_unexpected_query_failure_is_terminal_without_overwriting_context(
+    tmp_path, monkeypatch, outcome, failure
+):
+    calls = []
+    app, client, _, desk = await setup_real(tmp_path, monkeypatch, calls)
+    started, release = threading.Event(), threading.Event()
+
+    def fail(*_args, **_kwargs):
+        started.set()
+        release.wait(5)
+        raise failure("private exception details")
+
+    monkeypatch.setattr(app.state.agent, "query", fail)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_unexpected",
+        "generation": 0,
+        "question": "纸箱在哪？",
+    }
+    try:
+        first = asyncio.create_task(client.post("/api/chat", json=body))
+        assert await asyncio.to_thread(started.wait, 2)
+        before = len(calls)
+        if outcome == "cancel":
+            cancelled = await client.post(
+                f"/api/investigations/{desk['id']}/requests/req_unexpected/cancel"
+            )
+            assert cancelled.status_code == 200
+        elif outcome == "reset":
+            reset = await client.put(
+                f"/api/investigations/{desk['id']}",
+                json={"revision": 0, "state": {"epoch": 1}},
+            )
+            assert reset.status_code == 200
+        elif outcome == "delete":
+            assert (await client.delete(f"/api/investigations/{desk['id']}")).status_code == 204
+        release.set()
+        response = await first
+        if outcome == "unknown":
+            assert response.status_code == 409 and response.json()["state"] == "unknown"
+            assert (await client.post("/api/chat", json=body)).json()["state"] == "unknown"
+        elif outcome == "cancel":
+            assert response.status_code == 200 and response.json() == cancelled.json()
+        else:
+            assert response.status_code == (409 if outcome == "reset" else 410)
+        assert "private exception details" not in response.text
+        assert len(calls) == before
+        assert app.state.agent.slots.acquire(blocking=False)
+        assert app.state.agent.slots.acquire(blocking=False)
+        app.state.agent.slots.release()
+        app.state.agent.slots.release()
+    finally:
+        release.set()
+        await client.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["insert", "commit"])
+async def test_chat_admission_database_failure_rolls_back_and_releases_slot(
+    tmp_path, monkeypatch, failure
+):
+    import sqlite3
+    from contextlib import contextmanager
+
+    calls = []
+    app, client, _, desk = await setup_real(tmp_path, monkeypatch, calls)
+    ws = app.state.workspace
+    owner = (await client.get("/api/session")).json()["owner_id"]
+    original_db = ws.db
+    with original_db() as c:
+        c.execute(
+            "INSERT INTO queries(id,investigation,owner,generation,hash,state,updated,input) "
+            "VALUES ('previous_unknown',?,?,0,'old','unknown',?,?)",
+            (desk["id"], owner, time.time(), json.dumps({"question": "之前的问题"})),
+        )
+        if failure == "insert":
+            c.execute(
+                "CREATE TRIGGER fail_query_admission BEFORE INSERT ON queries "
+                "BEGIN SELECT RAISE(ABORT, 'injected insert failure'); END"
+            )
+        else:
+            c.execute("CREATE TABLE admission_parent(id INTEGER PRIMARY KEY)")
+            c.execute(
+                "CREATE TABLE admission_child(id INTEGER REFERENCES admission_parent(id) "
+                "DEFERRABLE INITIALLY DEFERRED)"
+            )
+            c.execute(
+                "CREATE TRIGGER fail_query_admission AFTER INSERT ON queries "
+                "BEGIN INSERT INTO admission_child VALUES (999); END"
+            )
+
+    @contextmanager
+    def checked_db():
+        with original_db() as c:
+            c.execute("PRAGMA foreign_keys=ON")
+            yield c
+
+    monkeypatch.setattr(ws, "db", checked_db)
+    body = {
+        "investigation_id": desk["id"],
+        "request_id": "req_admission_failure",
+        "generation": 0,
+        "question": "纸箱在哪？",
+    }
+    try:
+        before = len(calls)
+        with pytest.raises(sqlite3.IntegrityError):
+            await client.post("/api/chat", json=body)
+        assert len(calls) == before
+        with original_db() as c:
+            assert (
+                c.execute(
+                    "SELECT state FROM queries WHERE owner=? AND id='previous_unknown'", (owner,)
+                ).fetchone()["state"]
+                == "unknown"
+            )
+            assert (
+                c.execute(
+                    "SELECT 1 FROM queries WHERE owner=? AND id='req_admission_failure'", (owner,)
+                ).fetchone()
+                is None
+            )
+        assert app.state.agent.slots.acquire(blocking=False)
+        assert app.state.agent.slots.acquire(blocking=False)
+        app.state.agent.slots.release()
+        app.state.agent.slots.release()
+    finally:
         await client.aclose()
 
 

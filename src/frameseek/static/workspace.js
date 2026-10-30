@@ -36,7 +36,7 @@
   }
   const needsWatch = video => ["queued","probing","captioning","transcribing","indexing"].includes(video.job?.state) || (video.knowledge_status?.required_for_chat && ["waiting_probe","queued","indexing"].includes(video.knowledge_status.state));
   let session, current, currentVideo = demo, suspended = true, saving = null, lastSaved = "", lastSavedEdits = "", timer;
-  let conflict = false, requestEpoch = 0, activeRequest = null, libraryEpoch = 0, submissionEpoch = 0, watchEpoch = 0;
+  let conflict = false, requestEpoch = 0, activeRequest = null, libraryEpoch = 0, submissionEpoch = 0, watchEpoch = 0, cancelEpoch = 0;
   let pendingSave = null;
   let lastVideoDesks = {};
   try {
@@ -657,14 +657,16 @@
       }catch(error){if (active()) ui().notify(error.message);return;}
     }
   }
-  async function recover() {
+  async function recover({resumeMissing=false}={}) {
     if (!current || currentVideo.id === "demo_parcel") return;
-    const deskId=current.id, epoch=requestEpoch, initialDraft=$("question").value;
+    const deskId=current.id, epoch=requestEpoch, deskEpoch=store().getSnapshot().epoch,
+      submission=submissionEpoch, initialDraft=$("question").value;
+    const valid=()=>owns(deskId,epoch) && store().getSnapshot().epoch===deskEpoch && submission===submissionEpoch;
     $('resume-query').hidden=true;
     const data = await api(`/api/investigations/${deskId}/requests`);
-    if (!owns(deskId,epoch)) return;
+    if (!valid()) return;
     const existing=new Set(store().getSnapshot().records.map(r=>r.query.id));
-    const completed=data.items.filter(r=>r.state === "done" && r.result?.response?.schema_version).slice(0,100).reverse();
+    const completed=data.items.filter(r=>r.state === "done" && r.result?.response?.schema_version && !isEmptyCancellation(r.result)).slice(0,100).reverse();
     let added=false;
     for (const request of completed) {
       if (!existing.has(request.id)) {
@@ -679,11 +681,19 @@
       if (request.state === "done" && activeRequest?.desk===deskId && activeRequest.id===request.id) activeRequest=null;
       if (["running","unknown"].includes(request.state)) {
         if (!draft && initialDraft===draft && request.input) draft=request.input.question;
-        if (!activeRequest) activeRequest={desk:deskId,id:request.id,state:request.state};
+        if (!activeRequest) activeRequest={desk:deskId,id:request.id,state:request.state,parentRequestId:request.input?.parent_request_id};
         else if (activeRequest.desk===deskId && activeRequest.id===request.id) activeRequest.state=request.state;
         ui().notify(request.state === "unknown" ? "先前调用结果不确定，不会自动重复调用。原问题已保留。" : "先前查询仍在执行；点击恢复查询获取结果。");
         $('resume-query').hidden=false;
       }
+    }
+    const missing=activeRequest;
+    if (missing?.desk===deskId && missing.kind!=='supplement' && !data.items.some(request=>request.id===missing.id))
+      $('resume-query').hidden=false;
+    if (resumeMissing && missing?.desk===deskId && missing.kind!=='supplement' && missing.state==='running'
+        && missing.endpoint && missing.body && !data.items.some(request=>request.id===missing.id)) {
+      await resumeMissingRequest(missing,deskId,epoch);
+      if (!valid()) return;
     }
     for (const supplement of data.supplements || []) {
       const wasActive=activeRequest?.desk===deskId && activeRequest.id===supplement.id;
@@ -721,13 +731,13 @@
       if (supplement.state === 'done' && supplement.input && !activeRequest) {
         const original=supplement.input;
         const prepared=await api('/api/auto-chat/prepare','POST',original);
-        if (!owns(deskId,epoch)) return;
+        if (!valid()) return;
         if (prepared.kind!=='ready' || prepared.engine!=='index') {
           ui().notify(prepared.message || '补查已完成，但仍无法确认答案；原问题已保留。');
           continue;
         }
         const result=await api('/api/index-chat','POST',{...original,engine:'index'});
-        if (!owns(deskId,epoch)) return;
+        if (!valid()) return;
         if (result?.response && !store().getSnapshot().records.some(r=>r.query.id===result.id)) {
           const parent=store().getSnapshot().records.find(r=>r.query.id===original.parent_request_id);
           ui().answer({...result,parentTurn:parent?.id || null},original.question);added=true;
@@ -737,7 +747,55 @@
     }
     if ($('question').value !== initialDraft) draft=$('question').value;
     ui().restoreDraft(draft);
-    if (added || draft!==initialDraft) {await flush();if (!owns(deskId,epoch)) return;}
+    if (added || draft!==initialDraft) {await flush();if (!valid()) return;}
+  }
+  async function resumeMissingRequest(pending,deskId,epoch) {
+    const submission=submissionEpoch;
+    const valid=()=>owns(deskId,epoch) && activeRequest===pending
+      && submissionEpoch===submission
+      && store().getSnapshot().epoch===pending.body.generation
+      && currentVideo.id===pending.sourceId && currentVideo.generation===pending.sourceGeneration;
+    if (!valid() || pending.recovering) return;
+    pending.recovering=true;
+    $('resume-query').hidden=false;
+    ui().busy(true);
+    ui().notify('正在使用原请求恢复；不会创建新的请求。');
+    try {
+      let outcome;
+      try {outcome=await api(pending.endpoint,'POST',pending.body);}
+      catch(error) {
+        if(error.data?.kind==='query_control' || error.data?.response) outcome=error.data;
+        else throw error;
+      }
+      if (!valid()) return;
+      if (outcome?.kind==='query_control' && outcome.request_id===pending.id && ['pending','unknown'].includes(outcome.state)) {
+        pending.state=outcome.state==='unknown' ? 'unknown' : 'running';
+        $('resume-query').hidden=false;$('cancel-question').hidden=false;
+        ui().notify(outcome.suggested_action || '原请求仍在处理，请稍后恢复查看。');
+        status(pending.state==='unknown' ? '调用结果不确定' : '正在查找证据…',pending.state==='unknown' ? 'error' : '');
+        return;
+      }
+      if (outcome?.id!==pending.id || outcome.mode!=='real' || outcome.video_id!==pending.sourceId
+          || outcome.response?.schema_version!=='0.1'
+          || (outcome.source_generation!==undefined && outcome.source_generation!==pending.sourceGeneration))
+        throw new Error('请求恢复响应无效');
+      if (!isEmptyCancellation(outcome) && !isQueryResult(outcome,pending)) throw new Error('请求恢复响应无效');
+      activeRequest=null;
+      $('resume-query').hidden=true;$('cancel-question').hidden=true;
+      if (!isEmptyCancellation(outcome) && !store().getSnapshot().records.some(r=>r.query.id===outcome.id)) {
+        ui().answer({...outcome,parentTurn:pending.parentTurn},pending.body.question);
+      }
+      ui().notify(isEmptyCancellation(outcome) ? '原请求已取消，输入已保留。' : '已恢复原请求结果。');
+      await flush();
+    } catch(error) {
+      if (valid()) {
+        $('resume-query').hidden=false;
+        ui().notify(`原请求恢复未完成：${error.message}。输入已保留；可再次恢复同一请求。`);
+      }
+    } finally {
+      pending.recovering=false;
+      if (owns(deskId,epoch) && submission===submissionEpoch && (!activeRequest || activeRequest===pending)) ui().busy(false);
+    }
   }
   async function ask(question) {
     if (suspended || !current || !sourceReady(currentVideo)) return;
@@ -814,7 +872,8 @@
         ui().preflightFeedback?.(prepared.message);return;
       }
       preflightNotice=false;
-      pending={desk:desk.id,id:body.request_id,state:"running"};activeRequest=pending;
+      pending={desk:desk.id,id:body.request_id,state:"running",parentTurn,parentRequestId:body.parent_request_id,
+        endpoint,body:{...body},sourceId:currentVideo.id,sourceGeneration:currentVideo.generation};activeRequest=pending;
       $("cancel-question").hidden=false;
       status("正在查找证据…");
       let data;
@@ -841,16 +900,18 @@
     finally {if(owns(desk.id,epoch) && submission===submissionEpoch && (!activeRequest || activeRequest===pending)) {$("cancel-question").hidden=true;ui().busy(false);refreshChatBudget();}}
   }
   async function cancelCurrent() {
-    const pending=activeRequest,desk=current?.id,epoch=requestEpoch;
+    const pending=activeRequest,desk=current?.id,epoch=requestEpoch,deskEpoch=store().getSnapshot().epoch,submission=submissionEpoch;
     if(!pending)return;
-    const control=$("cancel-question");control.disabled=true;
+    const control=$("cancel-question"), cancellation=++cancelEpoch;control.disabled=true;
+    let operationSubmission=submission;
     try {
       const outcome=await stopRequest();
-      if(!owns(desk,epoch))return;
+      if(!owns(desk,epoch) || store().getSnapshot().epoch!==deskEpoch || submission!==submissionEpoch)return;
       submissionEpoch++;
       const cancelledSubmission=submissionEpoch;
+      operationSubmission=cancelledSubmission;
       control.hidden=true;
-      const completed=outcome?.state==='done';
+      const completed=outcome?.state==='done' || isQueryResult(outcome,pending);
       const unknown=outcome?.state==='unknown';
       const failed=['failed','waiting_budget'].includes(outcome?.state);
       if (completed && pending.kind==='supplement') {
@@ -862,22 +923,43 @@
         return;
       }
       ui().busy(false);
-      ui().notify(unknown ? "补查结果不确定，不会自动重发；输入已保留。"
+      ui().notify(completed && pending.kind!=='supplement' ? "查找已结束，已有结果和输入已保留。"
+        : unknown ? "补查结果不确定，不会自动重发；输入已保留。"
         : failed ? "补查在停止前未完成；输入已保留，不会自动重发。"
         : "已停止本轮处理，输入已保留。可以修改后重新发送。");
-      status(completed ? "补查已完成" : unknown ? "结果不确定" : failed ? "补查未完成" : "已停止处理");await flush();
-    }catch(error){if(owns(desk,epoch))ui().notify("停止未完成："+error.message+"；输入已保留，可再次点击停止。");}
-    finally{control.disabled=false;}
+      status(completed ? (pending.kind==='supplement' ? "补查已完成" : "查找已结束") : unknown ? "结果不确定" : failed ? "补查未完成" : "已停止处理");await flush();
+    }catch(error){if(owns(desk,epoch) && operationSubmission===submissionEpoch)ui().notify("停止未完成："+error.message+"；输入已保留，可再次点击停止。");}
+    finally{if(cancellation===cancelEpoch)control.disabled=false;}
+  }
+  function isQueryResult(outcome,pending) {
+    return pending?.kind!=='supplement' && outcome?.id===pending?.id && outcome.mode==='real'
+      && outcome.video_id===currentVideo.id && outcome.response?.schema_version==='0.1'
+      && (outcome.source_generation===undefined || outcome.source_generation===currentVideo.generation)
+      && ['ok','partial','no_result','error'].includes(outcome.response.status)
+      && !isEmptyCancellation(outcome);
+  }
+  function isEmptyCancellation(result) {
+    const response=result?.response;
+    return response?.status==='error' && Array.isArray(response.events) && !response.events.length
+      && Array.isArray(response.errors) && response.errors.length>0
+      && response.errors.every(error=>error?.code==='query_cancelled');
   }
   async function stopRequest() {
     const pending=activeRequest;
     if(!pending) return;
+    const epoch=requestEpoch, deskEpoch=store().getSnapshot().epoch;
     const kind=pending.kind==='supplement' ? 'supplements' : 'requests';
     const outcome=await api(`/api/investigations/${pending.desk}/${kind}/${pending.id}/cancel`,"POST");
-    if (activeRequest===pending) {
+    if (activeRequest===pending && owns(pending.desk,epoch)) {
       activeRequest=null;
-      $('cancel-question').hidden=true;
-      $('resume-query').hidden=true;
+      if (store().getSnapshot().epoch===deskEpoch) {
+        if (isQueryResult(outcome,pending) && !store().getSnapshot().records.some(r=>r.query.id===outcome.id)) {
+          const parent=store().getSnapshot().records.find(r=>r.query.id===pending.parentRequestId);
+          ui().answer({...outcome,parentTurn:pending.parentTurn || parent?.id || null});
+        }
+        $('cancel-question').hidden=true;
+        $('resume-query').hidden=true;
+      }
     }
     return outcome;
   }
@@ -921,7 +1003,7 @@
       $('close-visual-search').onclick=()=>{searchEpoch++;$('visual-search-dialog').close();};
       $("save-state").onclick=()=>conflict ? openDesk(current.id).catch(e=>ui().notify(e.message)) : flush().catch(()=>{});
       $("cancel-question").onclick=()=>cancelCurrent();
-      $("resume-query").onclick=()=>recover().catch(e=>ui().notify(e.message));
+      $("resume-query").onclick=()=>recover({resumeMissing:true}).catch(e=>ui().notify(e.message));
       $("source-switcher").onchange=switchSelectedSource;
       refreshSourceSwitcher().catch(error=>ui().notify(`视频列表读取失败：${error.message}。可在管理视频中重试。`));
       $("close-library").onclick=()=>$("workspace-library").close();

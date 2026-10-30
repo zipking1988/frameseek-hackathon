@@ -46,14 +46,21 @@ def resolve_followup(question, context):
     return previous
 
 
+def matches_source_generation(result, video, generation):
+    """Legacy answers lack a generation; only the initial generation is unambiguous."""
+    if result.get("video_id") != video:
+        return False
+    if "source_generation" not in result:
+        return generation == 1
+    saved_generation = result["source_generation"]
+    return type(saved_generation) is int and saved_generation == generation
+
+
 def saved_question(result, request_input, load_parent, *, video, generation):
     """Recover older continuation chains without rewriting historical rows."""
     seen = set()
     for _ in range(10):
-        if (
-            result.get("video_id") != video
-            or result.get("source_generation", generation) != generation
-        ):
+        if not matches_source_generation(result, video, generation):
             raise ValueError("stale_context_generation")
         question = (
             result.get("resolved_question")

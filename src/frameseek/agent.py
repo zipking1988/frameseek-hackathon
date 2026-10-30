@@ -390,7 +390,7 @@ class Provider:
                 diagnostic["elapsed_ms"] = round((time.monotonic() - started) * 1000)
                 self.record_diagnostic(cache, diagnostic)
                 return result
-            except (httpx.HTTPError, ValueError, TimeoutError, HTTPException) as error:
+            except Exception as error:
                 if self.ledger.read_attempt(attempt, owner)["state"] == "dispatched":
                     self.ledger.transition(attempt, "unknown")
                 if isinstance(error, httpx.HTTPStatusError):
@@ -412,6 +412,8 @@ class Provider:
                     code = str(error)
                 elif isinstance(error, HTTPException):
                     code = "ownership_changed"
+                elif not isinstance(error, (httpx.HTTPError, ValueError, TimeoutError)):
+                    code = "internal_error"
                 else:
                     code = "response_invalid"
                 diagnostic.update(error=code, elapsed_ms=round((time.monotonic() - started) * 1000))
@@ -693,6 +695,12 @@ def progress_answer(video, observations, all_frames, reviewed, channels=None):
             },
         }
     ).model_dump(mode="json")
+
+
+def query_artifact_key(video, generation, owner, investigation_id, request_id, payload_hash):
+    """Bind query artifacts to the source generation and immutable request identity."""
+    identity = [video, generation, owner, investigation_id, request_id, payload_hash]
+    return hashlib.sha256(json.dumps(identity, separators=(",", ":")).encode()).hexdigest()
 
 
 class Agent:
@@ -1093,7 +1101,19 @@ class Agent:
         }
         return Answer.model_validate(answer).model_dump(mode="json")
 
-    def query(self, video, owner, question, request_id, context=None, guard=None):
+    def query(
+        self,
+        video,
+        owner,
+        question,
+        request_id,
+        context=None,
+        guard=None,
+        *,
+        investigation_id,
+        payload_hash,
+        source_generation,
+    ):
         if self.settings.mode != "real" or not self.runtime or self.runtime.blockers():
             raise AgentError("real_blocked")
         row = self.ws.owned("videos", video, owner)
@@ -1102,6 +1122,8 @@ class Agent:
         manifest = json.loads(row["manifest"])
         metadata = json.loads(row["metadata"])
         generation = row["generation"]
+        if generation != source_generation:
+            raise AgentError("stale_generation")
         if manifest.get("generation") != generation:
             raise AgentError("index_configuration_changed")
         if (
@@ -1143,7 +1165,10 @@ class Agent:
             "deadline": time.monotonic() + 300,
         }
         prefix = request_id + "_"
-        frame_prefix = hashlib.sha256(request_id.encode()).hexdigest()[:24] + "_"
+        artifact_key = query_artifact_key(
+            video, generation, owner, investigation_id, request_id, payload_hash
+        )
+        frame_prefix = artifact_key[:24] + "_"
         if (
             not direct_window
             and self.runtime.provider == "tokenfactory"
@@ -1338,7 +1363,7 @@ class Agent:
                 )
                 if progress:
                     provider.check()
-                    path = directory / (request_id + "_verified.json")
+                    path = directory / ("query_" + artifact_key + "_verified.json")
                     temp = path.with_suffix(".tmp")
                     temp.write_text(json.dumps(progress, ensure_ascii=False))
                     temp.replace(path)

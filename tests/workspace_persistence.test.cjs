@@ -129,6 +129,161 @@ test("a fresh completed question clears recovery left by a prior unknown request
   assert.equal(h.calls.filter(c => c.url.endsWith("/cancel")).length, 1);
 });
 
+test("an explicit recovery resubmits only the same missing request and preserves a newer draft", async () => {
+  const h=await harness(); let posts=0;
+  h.setOverride(c=>{
+    if(c.url==='/api/chat') {
+      if(++posts===1) throw new Error('connection_failed');
+      return response(answer(c.body.request_id));
+    }
+  });
+  h.get('question').value='original question';
+  await h.window.FrameSeekPersistence.ask('original question');
+  await h.window.testWorkspace.recover();
+  assert.equal(posts,1,'automatic recovery must not resend the request');
+  assert.equal(h.get('resume-query').hidden,false);
+  h.get('question').value='newer draft';
+  await h.get('resume-query').onclick();
+  const requests=h.calls.filter(c=>c.url==='/api/chat');
+  assert.equal(requests.length,2);
+  assert.deepEqual(requests[1].body,requests[0].body);
+  assert.equal(h.answers.length,1);
+  assert.equal(h.answers[0].id,requests[0].body.request_id);
+  assert.equal(h.get('question').value,'newer draft');
+  assert.equal(h.window.testWorkspace.get().activeRequest,null);
+});
+
+test('repeated recovery clicks do not submit the same request concurrently',async()=>{
+  const h=await harness(), pending=deferred();let posts=0;
+  h.setOverride(c=>c.url==='/api/chat' ? (++posts===1 ? Promise.reject(new Error('connection_failed')) : pending.promise) : undefined);
+  await h.window.FrameSeekPersistence.ask('original question');
+  const first=h.get('resume-query').onclick();await tick();
+  await h.get('resume-query').onclick();
+  assert.equal(posts,2);
+  const request=h.calls.find(c=>c.url==='/api/chat');
+  pending.resolve(response(answer(request.body.request_id)));await first;
+  assert.equal(h.answers.length,1);
+});
+
+test('explicit recovery never resends a missing supplement',async()=>{
+  const h=await harness();let listed=true;
+  const input={investigation_id:'desk-A',request_id:'supp-1',generation:0,question:'original question'};
+  h.setOverride(c=>c.url==='/api/investigations/desk-A/requests'
+    ? response({items:[],supplements:listed ? [{id:'supp-1',state:'running',input}] : []}) : undefined);
+  await h.window.testWorkspace.recover();listed=false;
+  await h.get('resume-query').onclick();
+  assert.equal(h.calls.some(c=>c.url==='/api/knowledge-chat/supplement'),false);
+});
+
+for(const firstToFinish of ['original','recovery']) {
+  test(`same-ID recovery and original response are displayed once when ${firstToFinish} finishes first`, async()=>{
+    const h=await harness(), original=deferred(), recovered=deferred(); let posts=0;
+    h.setOverride(c=>c.url==='/api/chat' ? (++posts===1 ? original.promise : recovered.promise) : undefined);
+    h.get('question').value='original question';
+    const asking=h.window.FrameSeekPersistence.ask('original question');await tick();
+    const recovering=h.get('resume-query').onclick();await tick();
+    const requests=h.calls.filter(c=>c.url==='/api/chat');
+    assert.equal(requests.length,2);assert.deepEqual(requests[1].body,requests[0].body);
+    const result=answer(requests[0].body.request_id);
+    h.get('question').value='newer draft';
+    if(firstToFinish==='original') {original.resolve(response(result));await asking;recovered.resolve(response(result));await recovering;}
+    else {recovered.resolve(response(result));await recovering;original.resolve(response(result));await asking;}
+    assert.equal(h.answers.length,1);assert.equal(h.get('question').value,'newer draft');
+  });
+}
+
+for(const knownBy of ['response','recovery']) {
+  test(`explicit recovery never resends an unknown request reported by ${knownBy}`, async()=>{
+    const h=await harness();let posts=0, requestId;
+    h.setOverride(c=>{
+      if(c.url==='/api/chat') {
+        posts++;requestId=c.body.request_id;
+        if(knownBy==='response') return response({kind:'query_control',state:'unknown',request_id:requestId},409);
+        throw new Error('connection_failed');
+      }
+      if(c.url==='/api/investigations/desk-A/requests' && knownBy==='recovery')
+        return response({items:[{id:requestId,state:'unknown',input:{question:'original question'}}]});
+    });
+    h.get('question').value='original question';
+    await h.window.FrameSeekPersistence.ask('original question');
+    await h.get('resume-query').onclick();
+    assert.equal(posts,1);
+    assert.equal(h.window.testWorkspace.get().activeRequest.state,'unknown');
+    assert.equal(h.get('question').value,'original question');
+  });
+}
+
+test('same-ID recovery cannot publish after navigating to another investigation',async()=>{
+  const h=await harness(), recovered=deferred();let posts=0, requestId;
+  h.desks.get('desk-B').state.ui={draft:'desk B draft'};
+  h.setOverride(c=>{
+    if(c.url==='/api/chat') {
+      requestId=c.body.request_id;
+      if(++posts===1) throw new Error('connection_failed');
+      return recovered.promise;
+    }
+    if(c.url.endsWith('/cancel')) {
+      const cancelled=answer(requestId);cancelled.response.status='error';
+      cancelled.response.errors=[{code:'query_cancelled'}];return response(cancelled);
+    }
+  });
+  await h.window.FrameSeekPersistence.ask('original question');
+  const pending=h.get('resume-query').onclick();await tick();
+  await h.window.testWorkspace.openDesk('desk-B');
+  recovered.resolve(response(answer(requestId)));await pending;
+  assert.equal(h.window.testWorkspace.get().current.id,'desk-B');
+  assert.equal(h.get('question').value,'desk B draft');assert.equal(h.answers.length,0);
+});
+
+test('a late recovery cannot release a newer in-flight question',async()=>{
+  const h=await harness(), original=deferred(), recovered=deferred(), newer=deferred();let posts=0;
+  h.setOverride(c=>c.url==='/api/chat' ? [original,recovered,newer][posts++].promise : undefined);
+  const asking=h.window.FrameSeekPersistence.ask('original question');await tick();
+  const recovering=h.get('resume-query').onclick();await tick();
+  const requestId=h.calls.find(c=>c.url==='/api/chat').body.request_id;
+  original.resolve(response(answer(requestId)));await asking;
+  const next=h.window.FrameSeekPersistence.ask('new question');await tick();
+  assert.equal(h.busy,true);
+  recovered.resolve(response(answer(requestId)));await recovering;
+  assert.equal(h.busy,true);assert.equal(h.answers.length,1);
+  const nextId=h.calls.filter(c=>c.url==='/api/chat')[2].body.request_id;
+  newer.resolve(response(answer(nextId)));await next;
+  assert.equal(h.answers.length,2);
+});
+
+test('same-ID recovery cannot publish after the source generation changes',async()=>{
+  const h=await harness(), recovered=deferred();let posts=0, requestId;
+  h.videos.get('video-A').generation=2;
+  h.setOverride(c=>{
+    if(c.url==='/api/chat') {
+      requestId=c.body.request_id;
+      if(++posts===1) throw new Error('connection_failed');
+      return recovered.promise;
+    }
+  });
+  await h.window.FrameSeekPersistence.ask('original question');
+  const pending=h.get('resume-query').onclick();await tick();
+  h.window.testWorkspace.get().currentVideo.generation=3;
+  recovered.resolve(response(answer(requestId)));await pending;
+  assert.equal(h.answers.length,0);
+});
+
+test('same-ID recovery cannot publish after the investigation is reset',async()=>{
+  const h=await harness(), recovered=deferred();let posts=0, requestId;
+  h.setOverride(c=>{
+    if(c.url==='/api/chat') {
+      requestId=c.body.request_id;
+      if(++posts===1) throw new Error('connection_failed');
+      return recovered.promise;
+    }
+  });
+  await h.window.FrameSeekPersistence.ask('original question');
+  const pending=h.get('resume-query').onclick();await tick();
+  h.store.clear();h.get('question').value='draft after reset';
+  recovered.resolve(response(answer(requestId)));await pending;
+  assert.equal(h.answers.length,0);assert.equal(h.get('question').value,'draft after reset');
+});
+
 test("failed deletion retains the active investigation and subsequent autosave", async () => {
   const h = await harness();
   h.setOverride(c => c.method === "DELETE" ? response({ detail: "delete_failed" }, 500) : undefined);
@@ -1272,6 +1427,168 @@ test("stop processing preserves draft, permits a new request and discards late o
   assert.deepEqual(h.answers.map(r=>r.id),["new-answer"]);
   assert.equal(h.busy,false);
   assert.equal(h.calls.filter(c=>c.url.endsWith("/cancel")).length,1);
+});
+
+for (const status of ["ok", "partial"]) {
+  test(`stopping retains a ${status} query result returned by cancellation`, async () => {
+    const h = await harness(), query = deferred();
+    h.store.record("parent-turn", answer("parent"));
+    h.setContext({mode:"real",id:"parent"});
+    let requestId;
+    h.setOverride(c => {
+      if (c.url === "/api/chat") { requestId=c.body.request_id; return query.promise; }
+      if (c.url.endsWith("/cancel")) {
+        const result=answer(requestId);
+        result.response.status=status;
+        result.response.timebase="video_absolute_seconds";
+        result.response.trace={visible:{channels:["visual_vector"],segments_reviewed:1,evidence_segments:1},debug:null};
+        result.response.events=[{video_id:"video-A",start:1,end:2,start_hms:"00:00:01",end_hms:"00:00:02",action:"visible action",summary:"observed",support_level:"high",evidence:[{t:1,t_hms:"00:00:01",frame_id:"video-A_frame-1",uri:"/media/video-A/frames/frame-1.jpg",caption:"visible action",asr:null}]}];
+        if(status==="partial")result.response.unresolved=["more evidence needed"];
+        return response(result);
+      }
+    });
+    h.get("question").value="original";
+    const old=h.window.FrameSeekPersistence.ask("original"); await tick();
+    h.get("question").value="new draft";
+    await h.get("cancel-question").onclick();
+    assert.equal(h.get("question").value,"new draft");
+    assert.equal(h.answers.length,1);
+    assert.equal(h.answers[0].id,requestId);
+    assert.equal(h.answers[0].parentTurn,"parent-turn");
+    assert.equal(h.answers[0].response.status,status);
+    assert.ok(h.desks.get("desk-A").state.records.some(r=>r.query.id===requestId));
+    query.resolve(response(answer(requestId))); await old;
+    assert.equal(h.answers.length,1,"a late original response cannot duplicate the result");
+  });
+}
+
+test("a cancelled query without evidence does not create a result card", async () => {
+  const h=await harness(), query=deferred(); let requestId;
+  h.setOverride(c=>{
+    if(c.url==="/api/chat"){requestId=c.body.request_id;return query.promise;}
+    if(c.url.endsWith("/cancel")){
+      const result=answer(requestId);result.response.status="error";
+      result.response.errors=[{code:"query_cancelled"}];return response(result);
+    }
+  });
+  const old=h.window.FrameSeekPersistence.ask("original");await tick();
+  await h.get("cancel-question").onclick();
+  assert.equal(h.answers.length,0);
+  assert.match(h.get("notice").textContent,/已停止/);
+  query.resolve(response(answer(requestId)));await old;
+  assert.equal(h.answers.length,0);
+});
+
+test("recovery excludes empty cancellations but retains partial and genuine errors", async () => {
+  const h=await harness();
+  const cancelled=answer("cancelled"), partial=answer("partial"), failure=answer("failure");
+  cancelled.response.status="error";
+  cancelled.response.errors=[{code:"query_cancelled"}];
+  partial.response.status="partial";
+  partial.response.events=[{video_id:"video-A",start:1,end:2,evidence:[{frame_id:"video-A_frame-1",t:1,uri:"/media/video-A/frames/frame-1.jpg"}]}];
+  partial.response.unresolved=["more evidence needed"];
+  failure.response.status="error";
+  failure.response.errors=[{code:"query_cancelled"},{code:"model_unknown"}];
+  h.requestLists.set("desk-A",[cancelled,partial,failure].map(result=>({id:result.id,state:"done",result})));
+  h.get("question").value="new draft";
+  await h.window.testWorkspace.recover();
+  await h.window.testWorkspace.recover();
+  assert.deepEqual(h.answers.map(result=>result.id),["failure","partial"]);
+  assert.equal(h.answers.find(result=>result.id==="partial").response.events.length,1);
+  assert.equal(h.get("question").value,"new draft");
+});
+
+test("an empty cancellation stays hidden after reopening the investigation", async () => {
+  const h=await harness(), query=deferred(); let requestId;
+  h.setOverride(c=>{
+    if(c.url==="/api/chat"){requestId=c.body.request_id;return query.promise;}
+    if(c.url.endsWith("/cancel")){
+      const result=answer(requestId);result.response.status="error";
+      result.response.errors=[{code:"query_cancelled"}];
+      h.requestLists.set("desk-A",[{id:requestId,state:"done",result}]);
+      return response(result);
+    }
+  });
+  const pending=h.window.FrameSeekPersistence.ask("original");await tick();
+  await h.get("cancel-question").onclick();
+  await h.window.testWorkspace.openDesk("desk-B");
+  await h.window.testWorkspace.openDesk("desk-A");
+  assert.equal(h.answers.length,0);
+  assert.equal(h.store.getSnapshot().records.length,0);
+  query.resolve(response(answer(requestId)));await pending;
+  assert.equal(h.answers.length,0);
+});
+
+test("stopping a recovered request retains its original parent", async () => {
+  const h=await harness({requests:[{id:"resumed",state:"running",input:{question:"follow-up",parent_request_id:"parent"}}]});
+  h.store.record("parent-turn",answer("parent"));
+  h.get("question").value="new draft";
+  h.setOverride(c=>c.url.endsWith("/cancel") ? response(answer("resumed")) : undefined);
+  await h.get("cancel-question").onclick();
+  assert.equal(h.answers[0].parentTurn,"parent-turn");
+  assert.equal(h.get("question").value,"new draft");
+});
+
+test("resetting the investigation while cancellation is pending rejects its old result", async () => {
+  const h=await harness(),query=deferred(),cancel=deferred();let requestId;
+  h.setOverride(c=>{
+    if(c.url==="/api/chat"){requestId=c.body.request_id;return query.promise;}
+    if(c.url.endsWith("/cancel"))return cancel.promise;
+  });
+  const old=h.window.FrameSeekPersistence.ask("original");await tick();
+  const stopping=h.get("cancel-question").onclick();await tick();
+  h.store.clear();
+  cancel.resolve(response(answer(requestId)));await stopping;
+  assert.equal(h.answers.length,0);
+  query.resolve(response(answer(requestId)));await old;
+  assert.equal(h.answers.length,0);
+});
+
+test("navigation saves a cancellation result on the old desk without importing it into the new desk", async () => {
+  const h=await harness(), query=deferred(), firstCancel=deferred(), navigationCancel=deferred();
+  let requestId,cancels=0;
+  h.setOverride(c=>{
+    if(c.url==="/api/chat"){requestId=c.body.request_id;return query.promise;}
+    if(c.url.endsWith("/cancel"))return ++cancels===1 ? firstCancel.promise : navigationCancel.promise;
+  });
+  h.get("question").value="original";
+  const old=h.window.FrameSeekPersistence.ask("original");await tick();
+  h.get("question").value="old desk draft";
+  const stopping=h.get("cancel-question").onclick();await tick();
+  const navigation=h.window.testWorkspace.openDesk("desk-B");await tick();
+  assert.equal(cancels,2);
+  firstCancel.resolve(response(answer(requestId)));await stopping;
+  navigationCancel.resolve(response(answer(requestId)));await navigation;
+  assert.equal(h.window.testWorkspace.get().current.id,"desk-B");
+  assert.equal(h.store.getSnapshot().records.length,0);
+  assert.equal(h.desks.get("desk-A").state.ui.draft,"old desk draft");
+  assert.ok(h.desks.get("desk-A").state.records.some(r=>r.query.id===requestId));
+  query.resolve(response(answer(requestId)));await old;
+  assert.equal(h.store.getSnapshot().records.length,0);
+});
+
+test("a late cancellation cannot unlock or hide controls for a newer query", async () => {
+  const h=await harness(),first=deferred(),second=deferred(),cancel=deferred();let requests=0,firstId;
+  h.setOverride(c=>{
+    if(c.url==="/api/chat"){
+      if(++requests===1){firstId=c.body.request_id;return first.promise;}
+      return second.promise;
+    }
+    if(c.url.endsWith("/cancel"))return cancel.promise;
+  });
+  const old=h.window.FrameSeekPersistence.ask("first");await tick();
+  const stopping=h.get("cancel-question").onclick();await tick();
+  first.resolve(response(answer(firstId)));await old;
+  h.get("question").value="new draft";
+  const next=h.window.FrameSeekPersistence.ask("new draft");await tick();
+  assert.equal(h.busy,true);
+  assert.equal(h.get("cancel-question").hidden,false);
+  cancel.resolve(response(answer(firstId)));await stopping;
+  assert.equal(h.busy,true);
+  assert.equal(h.get("cancel-question").hidden,false);
+  assert.equal(h.get("question").value,"new draft");
+  second.resolve(response(answer("new-answer")));await next;
+  assert.deepEqual(h.answers.map(r=>r.id),[firstId,"new-answer"]);
 });
 
 

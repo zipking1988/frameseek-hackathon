@@ -12,6 +12,13 @@ partial. The newer local Qwen visual-index experiment is a separate route.
 Fresh-judge live sports analysis, exhaustive event counts and identity tracking
 are not established.
 
+The application source matches the investigation-recovery release deployed on
+October 30, 2026. It includes guarded request recovery, source-generation checks
+and evidence checkpoint isolation. Historical partial checkpoints without enough
+identity information cannot be restored automatically; completed answers remain
+viewable. This public source repository excludes private media, account records,
+operational credentials and budget approvals.
+
 ## Run locally
 
 Use Python 3.13, uv, and FFmpeg/ffprobe.

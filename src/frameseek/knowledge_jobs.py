@@ -222,9 +222,19 @@ class FixtureKnowledgeJobs:
                 "updated=excluded.updated",
                 (video, generation, total, time.time(), run_id),
             )
-        threading.Thread(
-            target=self._work, args=(source, owner, metadata, processor, run_id), daemon=True
-        ).start()
+        try:
+            threading.Thread(
+                target=self._work, args=(source, owner, metadata, processor, run_id), daemon=True
+            ).start()
+        except Exception:
+            # No processor was dispatched. Do not overwrite cancellation or a newer run.
+            with self.ws.db() as c:
+                c.execute(
+                    "UPDATE knowledge_jobs SET state='failed',error='worker_start_failed',"
+                    "updated=? WHERE video=? AND generation=? AND state='queued' AND run_id=?",
+                    (time.time(), video, generation, run_id),
+                )
+            raise HTTPException(503, "worker_start_failed") from None
         return {"state": "queued", "generation": generation}
 
     def cancel(self, video, owner):
@@ -300,11 +310,31 @@ class FixtureKnowledgeJobs:
                     body.model_dump_json(),
                 ),
             )
-        threading.Thread(
-            target=self._supplement_work,
-            args=(source, desk, owner, body, question, plan, processor),
-            daemon=True,
-        ).start()
+        try:
+            threading.Thread(
+                target=self._supplement_work,
+                args=(source, desk, owner, body, question, plan, processor),
+                daemon=True,
+            ).start()
+        except Exception:
+            # Keep request idempotency and preserve any concurrent terminal state.
+            with self.ws.db() as c:
+                c.execute(
+                    "UPDATE knowledge_supplement_jobs "
+                    "SET state='failed',error='worker_start_failed',updated=? "
+                    "WHERE owner=? AND request_id=? AND investigation=? AND video=? "
+                    "AND generation=? AND payload_hash=? AND state='running'",
+                    (
+                        time.time(),
+                        owner,
+                        body.request_id,
+                        desk["id"],
+                        source["id"],
+                        source["generation"],
+                        payload_hash,
+                    ),
+                )
+            raise HTTPException(503, "worker_start_failed") from None
         return {"state": "running", "request_id": body.request_id}
 
     def preview_cloud_supplement(self, source, owner, question, plan):
