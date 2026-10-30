@@ -171,9 +171,9 @@ def search_events(index, question, offset=0, limit=40, snapshot=None):
     if action is None:
         return {
             "kind": "clarification_required",
-            "message": "已有事件索引无法完整解析这个统计条件；可统计："
-            + ("、".join(sorted(event_names(index))) or "尚无已识别事件")
-            + "。未调用模型。",
+            "message": "The event index cannot interpret this condition. Available event types: "
+            + (", ".join(sorted(event_names(index))) or "none")
+            + ". No model was called.",
             "available_conditions": [],
             "model_requests_sent": 0,
         }

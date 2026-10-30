@@ -7,6 +7,7 @@ import time
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
+from frameseek.demo import DEMO_IDS
 from frameseek.local_vision import answer_source, cancel_worker, configured
 from frameseek.question_context import matches_source_generation, resolve_followup, saved_question
 from frameseek.schema import Answer, QueryControl
@@ -26,7 +27,7 @@ def interrupt_local_query(owner, desk, request):
 
 def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None, chat_guard=None):
     prefix = "/api/cloud-chat" if cloud else "/api/local-chat"
-    label = "云端视觉" if cloud else "本机视觉"
+    label = "Cloud vision" if cloud else "Local vision"
 
     def available():
         return cloud.configured() if cloud else configured()
@@ -40,7 +41,7 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
         desk = ws.owned("investigations", body.investigation_id, owner)
         if json.loads(desk["state"]).get("epoch", 0) != body.generation:
             raise HTTPException(409, "stale_chat_generation")
-        if desk["video"] == "demo_parcel":
+        if desk["video"] in DEMO_IDS:
             raise HTTPException(409, "demo_uses_explicit_fixtures")
         source = ws.owned("videos", desk["video"], owner)
         context = None
@@ -95,7 +96,10 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
         if chat_guard:
             chat_guard(desk)
         if not available():
-            return {"kind": "capability_blocked", "message": label + "运行时尚未就绪，问题已保留。"}
+            return {
+                "kind": "capability_blocked",
+                "message": label + " is not ready; your question was kept.",
+            }
         return admission(source, owner, body, context)
 
     def publish(body, owner, source, answer, context=None):
@@ -186,11 +190,12 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                         "timebase": "video_absolute_seconds",
                         "answer": (
                             label
-                            + "处理未完成，已保存原问题和完成的分段。"
+                            + " did not finish; the question and completed segments were saved. "
                             + (
-                                "已发送的云端调用以账本为准，不会自动重发。"
+                                "Dispatched cloud calls remain in the ledger "
+                                "and will not be resent automatically."
                                 if cloud
-                                else "没有付费 API 调用。"
+                                else "No paid API calls were made."
                             )
                         ),
                         "events": [],
@@ -200,10 +205,11 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                             {
                                 "code": "local_vision_failed",
                                 "stage": "query",
-                                "message": label + "处理未完成",
+                                "message": label + " did not complete",
                                 "cause": str(error)[:200] or type(error).__name__,
                                 "retryable": False,
-                                "suggested_action": "保留问题，检查本机识别日志后显式重试。",
+                                "suggested_action": "Keep the question and check local "
+                                "recognition logs before an explicit retry.",
                                 "docs_url": "/docs/errors",
                                 "request_id": body.request_id,
                             }
@@ -251,7 +257,8 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                         request_id=body.request_id,
                         retry_after_seconds=None if unknown else 3,
                         suggested_action=json.loads(old["result"] or "{}").get(
-                            "progress", "本机识别仍在进行，完成后将显示回答。"
+                            "progress",
+                            "Local recognition is running; the answer will appear when complete.",
                         ),
                     ).model_dump(mode="json")
                 if not available():
@@ -279,7 +286,7 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                         owner,
                         body.generation,
                         payload,
-                        json.dumps({"progress": label + "：正在准备识别…"}),
+                        json.dumps({"progress": label + ": preparing recognition…"}),
                         time.time(),
                         body.model_dump_json(),
                     ),
@@ -301,7 +308,7 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                     "schema_version": "0.1",
                     "status": "error",
                     "timebase": "video_absolute_seconds",
-                    "answer": label + "处理未能启动，原问题已保留。",
+                    "answer": label + " could not start; your question was kept.",
                     "events": [],
                     "unresolved": [],
                     "followups": [],
@@ -309,10 +316,11 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
                         {
                             "code": "worker_start_failed",
                             "stage": "query",
-                            "message": "后台线程未能启动",
+                            "message": "Background worker could not start",
                             "cause": "worker_start_failed",
                             "retryable": False,
-                            "suggested_action": "检查本机资源后，显式提交新问题。",
+                            "suggested_action": "Check local resources, then submit a new "
+                            "question explicitly.",
                             "docs_url": "/docs/errors",
                             "request_id": body.request_id,
                         }
@@ -353,5 +361,5 @@ def install_local_routes(router, ws, owner_dependency, ChatInput, *, cloud=None,
             state="pending",
             request_id=body.request_id,
             retry_after_seconds=3,
-            suggested_action=label + "：正在准备识别…",
+            suggested_action=label + ": preparing recognition…",
         ).model_dump(mode="json")

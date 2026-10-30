@@ -358,7 +358,7 @@ test('Shift removing a nonprimary selection keeps follow-up anchored to the rema
  const records=new Map(['A','B'].map(id=>[id,{query:{id,question:id,response:{id}},select:{setAttribute(){}}}]));
  const ctx=vm.createContext({records,selectedIds,$,model:{expandPath(){}},detailFocus:null,selected:null,callbacks:{select(){}},draw(){},clearScope(){}});
  vm.runInContext(chooser,ctx);vm.runInContext("choose('A');choose('B',false,true);choose('A',false,true)",ctx);
- assert.equal(ctx.selected,'B');assert.equal(elements.get('composer-label').textContent,'继续追问：B');assert.deepEqual([...selectedIds],['B']);
+ assert.equal(ctx.selected,'B');assert.equal(elements.get('composer-label').textContent,'Continue to ask:B');assert.deepEqual([...selectedIds],['B']);
 });
 
 
@@ -399,11 +399,11 @@ test('failed real turns remain selectable but cannot anchor new queries; verifie
    vm.runInContext(`choose('${id}')`,ctx);
    assert.equal(ctx.selected,id);
    assert.equal(vm.runInContext('currentContext()',ctx),null);
-   assert.match(elements.get('composer-label').textContent,/重新提问/);
+   assert.match(elements.get('composer-label').textContent,/Re-question/);
  }
  vm.runInContext("choose('partial')",ctx);
  assert.equal(vm.runInContext('currentContext().query.id',ctx),'partial');
- assert.equal(elements.get('composer-label').textContent,'继续追问：partial');
+ assert.equal(elements.get('composer-label').textContent,'Continue to ask:partial');
 });
 
 test('card reply shortcut passes its originating turn to the fill-only composer callback',()=>{
@@ -412,7 +412,7 @@ test('card reply shortcut passes its originating turn to the fill-only composer 
  const start=source.indexOf('      (query.kind ? [] : replies).slice(0, 2).forEach');
  const end=source.indexOf('      if (!query.kind) actions.append(follow);',start);
  const buttons=[],calls=[];
- const ctx=vm.createContext({query:{},replies:['那后来呢？'],turn:{id:'task-A'},
+ const ctx=vm.createContext({query:{},display:value=>value,replies:['那后来呢？'],turn:{id:'task-A'},
   document:{createElement:()=>({addEventListener:(name,callback)=>buttons.push(callback)})},
   callbacks:{ask:(...args)=>calls.push(args)},actions:{append(){}}});
  vm.runInContext(source.slice(start,end),ctx);

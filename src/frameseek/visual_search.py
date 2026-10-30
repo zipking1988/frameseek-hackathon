@@ -172,7 +172,7 @@ def verification_prompt(question, context=None):
                 "Conditions on DIFFERENT subjects do not form a combined match. "
                 "Do not infer biological identity or continuity across cuts. Use "
                 "frame-local subject IDs. "
-                "List EACH matching supplied timestamp separately, with Chinese statements. "
+                "List EACH matching supplied timestamp separately, with English statements. "
                 "For general scene/action questions use a frame-local scene subject. "
                 "Do not infer continuous presence, unseen actions or whole-video absence. "
                 "Do not answer event totals or rankings from sampled images. "
@@ -251,7 +251,10 @@ def checked_matches(result, frames, duration):
         if "no" in verdicts:
             continue
         if "uncertain" in verdicts:
-            uncertain.append("候选画面中有条件无法确认，未作为匹配结果。")
+            uncertain.append(
+                "Some conditions could not be confirmed in a candidate frame, "
+                "so it was not counted as a match."
+            )
             continue
         if (frame_id, subject) in seen:
             raise SearchError("duplicate_visual_match")

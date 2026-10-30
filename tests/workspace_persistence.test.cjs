@@ -43,7 +43,7 @@ class Element {
   scrollIntoView() {}
   querySelector() { return new Element(); }
 }
-async function harness({ state = {}, requests = [], job = "ready", realReady = true, storage = new Map(), owner = "owner-A", revision = 1, queryReferences = false } = {}) {
+async function harness({ state = {}, requests = [], job = "ready", realReady = true, storage = new Map(), owner = "owner-A", revision = 1, queryReferences = false, startupGate = null, awaitStartup = true } = {}) {
   const store = createStore(), ids = new Map(), calls = [], answers = [], timers = new Map();
   let seq = 100, timerSeq = 0, ready = false, busy = false, context = null, override = null;
   const get = id => { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); };
@@ -74,7 +74,10 @@ async function harness({ state = {}, requests = [], job = "ready", realReady = t
     calls.push(call);
     const special = override?.(call);
     if (special !== undefined) return special;
-    if (url === "/api/session") return response({ csrf: "csrf", owner_id: owner, ttl_hours: 24, real_ready: realReady, query_reference_snapshots: queryReferences });
+    if (url === "/api/session") {
+      if (startupGate) await startupGate.promise;
+      return response({ csrf: "csrf", owner_id: owner, ttl_hours: 24, real_ready: realReady, query_reference_snapshots: queryReferences });
+    }
     if (url === "/api/investigations" && call.method === "GET") return response({ items: [...desks.values()] });
     if (url === "/api/investigations" && call.method === "POST") {
       const desk = { id: "new-demo", video: call.body.video_id, title: call.body.title, revision: 1, state: {} };
@@ -99,7 +102,8 @@ async function harness({ state = {}, requests = [], job = "ready", realReady = t
   const window = { FrameSeekSessionUI: ui, FrameSeekWorkbench: store,
     addEventListener(type,fn) { (windowEvents[type] ||= []).push(fn); },
     dispatchEvent(event) { (windowEvents[event.type] || []).forEach(fn=>fn(event)); } };
-  const sandbox = vm.createContext({ Event: class { constructor(type) { this.type=type; } }, window, document: { getElementById: get, createElement: () => new Element(), addEventListener() {} }, fetch,
+  const body = new Element(); body.setAttribute("data-workspace-startup", "loading");
+  const sandbox = vm.createContext({ Event: class { constructor(type) { this.type=type; } }, window, document: { body, getElementById: get, createElement: () => new Element(), addEventListener() {} }, fetch,
     sessionStorage: {getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     localStorage: { getItem: () => "desk-A", setItem() {} }, crypto: { randomUUID: () => `request-${++seq}` },
     setTimeout: (fn, delay) => { const id = ++timerSeq; timers.set(id, { fn, delay }); return id; }, clearTimeout: id => timers.delete(id),
@@ -109,12 +113,28 @@ async function harness({ state = {}, requests = [], job = "ready", realReady = t
     .replace("window.FrameSeekPersistence={flush,", "window.testWorkspace={start,openDesk,openSource,refreshSourceSwitcher,recover,confirmDelete,watch,get:()=>({current,currentVideo,activeRequest,requestEpoch})}; window.FrameSeekPersistence={flush,");
   vm.runInContext(source, sandbox);
   get("chat-engine").value="model";
-  ready = true; await window.testWorkspace.start();
-  return { store, get, calls, answers, desks, videos, requestLists, ui, window, timers,
+  ready = true; const startup = window.testWorkspace.start(); if (awaitStartup) await startup;
+  return { store, get, calls, answers, desks, videos, requestLists, ui, window, timers, body, startup,
     get busy() { return busy; }, setContext(value) { context = value; }, setOverride(fn) { override = fn; },
     async timer(delay) { const entry = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(entry, `Missing ${delay}ms timer`); timers.delete(entry[0]); entry[1].fn(); await tick(); },
   };
 }
+
+test("startup keeps the fixture hidden until the remembered investigation is restored", async () => {
+  const gate = deferred();
+  const h = await harness({ startupGate: gate, awaitStartup: false });
+  assert.equal(h.body.getAttribute("data-workspace-startup"), "loading");
+  gate.resolve(); await h.startup;
+  assert.equal(h.body.getAttribute("data-workspace-startup"), null);
+  assert.equal(h.window.testWorkspace.get().currentVideo.id, "video-A");
+});
+
+test("startup failures show a retry state instead of the fixture", async () => {
+  const gate = deferred();
+  const h = await harness({ startupGate: gate, awaitStartup: false });
+  gate.reject(new Error("offline")); await h.startup;
+  assert.equal(h.body.getAttribute("data-workspace-startup"), "error");
+});
 
 test("a fresh completed question clears recovery left by a prior unknown request", async () => {
   const h = await harness({ requests: [{ id: "old-unknown", state: "unknown", input: { question: "old question" } }] });
@@ -320,10 +340,10 @@ test('a late budget snapshot cannot replace the current desk budget or draft', a
  await h.window.testWorkspace.openDesk('desk-A');
  await h.window.testWorkspace.openDesk('desk-B');await tick();
  h.get('question').value='B的草稿';
- assert.match(h.get('chat-budget-status').textContent,/已用完 40/);
+ assert.match(h.get('chat-budget-status').textContent,/exhausted 40/);
  old.resolve(response({dispatch_prerequisites_met:true,budget:{remaining_calls:1,call_cap:40,short_window_calls:1}}));
  await tick();
- assert.match(h.get('chat-budget-status').textContent,/已用完 40/);
+ assert.match(h.get('chat-budget-status').textContent,/exhausted 40/);
  assert.equal(h.get('question').value,'B的草稿');
 });
 
@@ -447,7 +467,7 @@ test("deletion cancels the request before deleting and can create the fallback d
   const cancelIndex = h.calls.findIndex(c => c.url.endsWith("/cancel"));
   const deleteIndex = h.calls.findIndex(c => c.method === "DELETE");
   assert.ok(cancelIndex >= 0 && cancelIndex < deleteIndex);
-  assert.equal(h.window.testWorkspace.get().current.video, "demo_parcel");
+  assert.equal(h.window.testWorkspace.get().current.video, "demo_basketball");
   query.resolve(response(answer("late"))); await ask;
   assert.equal(h.answers.length, 0);
   assert.equal(h.busy, false);
@@ -531,7 +551,7 @@ test('an unknown recovered supplement is not retried or treated as running',asyn
   ? response({items:[],supplements:[{id:'supp-unknown',state:'unknown',input:{question:'keep question'}}]}) : undefined);
  await h.window.testWorkspace.recover();
  assert.equal(h.window.testWorkspace.get().activeRequest,null);
- assert.match(h.get('notice').textContent,/不确定.*不会自动重发/);
+ assert.match(h.get('notice').textContent,/uncertain.*not be automatically reissued/);
  assert.equal(h.get('question').value,'keep question');
  assert.equal(h.calls.some(c=>c.url==='/api/knowledge-chat/supplement'),false);
 });
@@ -544,7 +564,7 @@ test('a recovered supplement that later fails releases the composer and preserve
  assert.equal(h.window.testWorkspace.get().activeRequest.kind,'supplement');
  state='waiting_budget';await h.window.testWorkspace.recover();
  assert.equal(h.window.testWorkspace.get().activeRequest,null);
- assert.match(h.get('notice').textContent,/等待预算或授权/);
+ assert.match(h.get('notice').textContent,/pending budget or authorization/);
  assert.equal(h.get('question').value,'keep question');
 });
 
@@ -660,7 +680,7 @@ test("reopening a processing source starts a new watcher and enables it when rea
   h.videos.get("video-B").metadata.duration=65;
   await h.timer(2000);
   assert.equal(h.store.getSnapshot().local, false); assert.equal(h.window.testWorkspace.get().currentVideo.job.state, "ready");
-  assert.equal(h.get('source-switcher').children.find(option=>option.value==='video-B').dataset.detail,'01:05 · 可以提问');
+  assert.equal(h.get('source-switcher').children.find(option=>option.value==='video-B').dataset.detail,'01:05 · Ready for questions');
   assert.equal(h.calls.filter(c=>c.url==='/api/runtime/status').length,checks+1);
   assert.equal(h.calls.filter(c=>c.url==='/api/chat').length,0);
 });
@@ -673,7 +693,7 @@ test('long knowledge indexing remains watched after an hour and unlocks on compl
  video.knowledge_status={required_for_chat:true,state:'ready',completed_segments:2000,total_segments:2000};
  await h.timer(2000);
  assert.equal(h.window.testWorkspace.get().currentVideo.knowledge_status.state,'ready');
- assert.match(h.get('notice').textContent,/可以开始提问/);
+ assert.match(h.get('notice').textContent,/can start asking questions/);
  assert.equal([...h.timers.values()].some(timer=>timer.delay===2000),false);
 });
 
@@ -701,7 +721,7 @@ test('knowledge progress reconnects after transient read errors without restarti
  h.setOverride(c=>c.url==='/api/videos/video-B' && failures++<2
    ? response({detail:'temporarily unavailable'},503) : undefined);
  await h.timer(2000);
- assert.match(h.get('notice').textContent,/正在重新连接/);
+ assert.match(h.get('notice').textContent,/reconnecting/);
  await h.timer(4000);await h.timer(8000);
  video.knowledge_status={required_for_chat:true,state:'ready',completed_segments:2,total_segments:2};
  await h.timer(2000);
@@ -715,7 +735,7 @@ test('knowledge progress stops on authorization failure without retrying', async
  await h.window.testWorkspace.openDesk('desk-B');
  h.setOverride(c=>c.url==='/api/videos/video-B' ? response({detail:'expired'},401) : undefined);
  await h.timer(2000);
- assert.match(h.get('notice').textContent,/重新打开该视频/);
+ assert.match(h.get('notice').textContent,/reopen the video/);
  assert.equal([...h.timers.values()].some(timer=>timer.delay===4000),false);
 });
 
@@ -725,7 +745,7 @@ test('knowledge progress stops after bounded reconnect attempts', async()=>{
  await h.window.testWorkspace.openDesk('desk-B');
  h.setOverride(c=>c.url==='/api/videos/video-B' ? response({detail:'offline'},503) : undefined);
  for(const delay of [2000,4000,8000,16000]) await h.timer(delay);
- assert.match(h.get('notice').textContent,/重新打开该视频/);
+ assert.match(h.get('notice').textContent,/reopen the video/);
  assert.equal([...h.timers.values()].some(timer=>timer.delay===16000),false);
  assert.equal(h.calls.filter(c=>c.url.includes('/knowledge/') && c.method==='POST').length,0);
 });
@@ -736,11 +756,11 @@ test("failed or cancelled preflight can be retried in fixture mode; indexed canc
   h.videos.get("video-B").job.state = "cancelled";
   await h.window.FrameSeekPersistence.library("videos");
   const rows = h.get("library-items").children;
-  const retry = rows.find(r => r.children[0].children[0].textContent === "C.mp4").children.find(b => b.textContent === "重新预检");
+  const retry = rows.find(r => r.children[0].children[0].textContent === "C.mp4").children.find(b => b.textContent === "Retry preflight");
   assert.ok(retry); assert.notEqual(retry.disabled, true);
   h.setOverride(c => c.url === "/api/videos/video-C/retry" ? response({}, 202) : undefined);
   await retry.onclick(); assert.ok(h.calls.some(c => c.url === "/api/videos/video-C/retry" && c.method === "POST"));
-  const analyze = rows.find(r => r.children[0].children[0].textContent === "B.mp4").children.find(b => b.textContent === "开始分析");
+  const analyze = rows.find(r => r.children[0].children[0].textContent === "B.mp4").children.find(b => b.textContent === "Start analysis");
   assert.equal(analyze.disabled, true);
 });
 
@@ -789,7 +809,7 @@ test('removed question tombstone survives recovery and navigation without redisp
 test('player source dropdown restores each video chat and draft without model requests', async()=>{
   const h=await harness({state:{records:[{id:'task-1',query:answer('saved-A')}],ui:{draft:'draft A'}}});
   await tick();
-  assert.deepEqual(h.get('source-switcher').children.map(o=>o.value),['demo_parcel','video-A','video-B']);
+  assert.deepEqual(h.get('source-switcher').children.map(o=>o.value),['demo_basketball','video-A','video-B']);
   h.get('source-switcher').value='video-B';
   await h.get('source-switcher').onchange();
   assert.equal(h.window.testWorkspace.get().current.id,'desk-B');
@@ -810,24 +830,24 @@ test('source switcher reports knowledge progress instead of treating preflight a
   h.videos.get('video-B').knowledge_status={required_for_chat:true,state:'indexing',completed_segments:2,total_segments:3};
   await h.window.testWorkspace.refreshSourceSwitcher();
   const option=h.get('source-switcher').children.find(item=>item.value==='video-B');
-  assert.match(option.dataset.detail,/建立基础索引 · 2\/3 段/);
-  assert.doesNotMatch(option.dataset.detail,/可以提问/);
+  assert.match(option.dataset.detail,/Building index · 2\/3 segments/);
+  assert.doesNotMatch(option.dataset.detail,/Ready for questions/);
   await h.window.FrameSeekPersistence.library('videos');
   const row=h.get('library-items').children.find(item=>item.children[0]?.children[0]?.textContent==='B.mp4');
-  assert.match(row.children[0].children[1].textContent,/建立基础索引 · 2\/3 段/);
+  assert.match(row.children[0].children[1].textContent,/Building index · 2\/3 segments/);
   h.videos.get('video-B').knowledge_status.state='ready';
   await h.window.testWorkspace.refreshSourceSwitcher();
-  assert.match(h.get('source-switcher').children.find(item=>item.value==='video-B').dataset.detail,/可以提问/);
+  assert.match(h.get('source-switcher').children.find(item=>item.value==='video-B').dataset.detail,/Ready for questions/);
 });
 
 test('cloud index identifies its processor and a budget wait clearly', async()=>{
   const h=await harness();
   h.videos.get('video-B').knowledge_status={required_for_chat:true,state:'waiting_budget',processor:'tokenfactory'};
   await h.window.testWorkspace.refreshSourceSwitcher();
-  assert.match(h.get('source-switcher').children.find(item=>item.value==='video-B').dataset.detail,/等待预算或授权/);
+  assert.match(h.get('source-switcher').children.find(item=>item.value==='video-B').dataset.detail,/Waiting for budget or approval/);
   h.videos.get('video-B').knowledge_status.state='ready';
   await h.window.testWorkspace.openDesk('desk-B');
-  assert.match(h.get('composer-mode-text').textContent,/云端补查需预算准入/);
+  assert.match(h.get('composer-mode-text').textContent,/Cloud supplementary check requires budget access/);
   assert.doesNotMatch(h.get('composer-mode-text').textContent,/本机索引/);
 });
 
@@ -838,7 +858,7 @@ test('failed dropdown navigation restores its selection and retains the current 
   assert.equal(h.get('source-switcher').value,'video-A');
   assert.equal(h.get('source-switcher').disabled,false);
   assert.equal(h.get('question').value,'keep A');
-  assert.match(h.get('notice').textContent,/切换视频失败/);
+  assert.match(h.get('notice').textContent,/Failed to switch video/);
 });
 
 test('selecting the current video does not save or create another desk',async()=>{
@@ -878,7 +898,7 @@ test('custom picker receives busy and restored selection notifications around as
   assert.equal(select.disabled,true);
   gate.resolve(response({...h.desks.get('desk-B')}));await pending;
   assert.deepEqual(states.at(-1),{busy:false,id:'video-B'});
-  assert.equal(select.children[0].dataset.thumbnail,'/media/demo_parcel/frames/0.jpg');
+  assert.equal(select.children[0].dataset.thumbnail,'/media/demo_basketball/frames/0.jpg');
   assert.match(select.children[0].dataset.detail,/00:18/);
   assert.equal(h.calls.some(c=>c.url==='/api/chat'),false);
 });
@@ -911,7 +931,7 @@ test('index candidates render as unverified, seek original time, and keep the qu
  ]}) : undefined);
  h.get('question').value='我的原问题';
  await h.get('search-index').onclick();
- assert.match(h.get('visual-search-summary').textContent,/候选不等于满足全部条件/);
+ assert.match(h.get('visual-search-summary').textContent,/Candidates are not confirmed matches/);
  assert.equal(h.get('visual-search-results').children.length,1);
  h.get('visual-search-results').children[0].children[2].onclick();
  assert.equal(sought,62.4);
@@ -978,10 +998,10 @@ test('full saved-index browsing loads subsequent times without sending chat or l
  h.get('question').value='查找全部时间';await h.get('search-index').onclick();
  assert.equal(pages[0].limit,40);
  const more=h.get('visual-search-results').children.at(-1);
- assert.match(more.textContent,/加载后续时间/);await more.onclick();
+ assert.match(more.textContent,/Load later times/);await more.onclick();
  assert.equal(pages[1].offset,40);assert.equal(pages[1].snapshot,'a'.repeat(64));
  assert.equal(h.get('visual-search-results').children.length,2);
- assert.match(h.get('visual-search-summary').textContent,/不是整段视频的全部出现时间/);
+ assert.match(h.get('visual-search-summary').textContent,/do not represent every appearance/);
  assert.equal(h.get('question').value,'查找全部时间');assert.equal(h.answers.length,0);
  assert.equal(h.calls.filter(c=>c.url.startsWith('/api/chat')).length,0);
 });
@@ -1031,9 +1051,9 @@ test('sampled timeline does not present indexed observations as every video fram
   coverage:{catalog_frames:385,reviewed_frames:385,missing_frame_ids:[],uncertain_frame_ids:['f0'],catalog_complete:false,exhaustive_under_index:false},
   occurrences:[]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('find person');
- assert.match(h.get('visual-search-summary').textContent,/抽样画面时点（不是人数或事件次数）/);
- assert.match(h.get('visual-search-coverage').textContent,/385 \/ 385 张索引画面/);
- assert.match(h.get('visual-search-coverage').textContent,/仅包含抽样画面，并非逐帧检查/);
+ assert.match(h.get('visual-search-summary').textContent,/sampled frame times \(not a count of people or events\)/);
+ assert.match(h.get('visual-search-coverage').textContent,/385 \/ 385 indexed frames/);
+ assert.match(h.get('visual-search-coverage').textContent,/contains sampled frames, not every video frame/);
 });
 
 test('short-scope uncertain candidates are separate from matching results and can seek', async()=>{
@@ -1044,10 +1064,10 @@ test('short-scope uncertain candidates are separate from matching results and ca
   occurrences:[],uncertain_candidate_total:1,uncertain_candidates:[{t:4,frame_id:'f4',uri:'/media/video-A/frames/f4.jpg'},
     {t:5,frame_id:'foreign',uri:'/media/video-B/frames/f5.jpg'}]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('在00:04找白色球衣的人');
- const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='待核实候选画面');
- assert.ok(group.children.some(item=>/待核实候选/.test(item.textContent)));
+ const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames');
+ assert.ok(group.children.some(item=>/Unverified candidate/.test(item.textContent)));
  const candidate=group.children.find(item=>item.children[0]?.src==='/media/video-A/frames/f4.jpg');
- assert.ok(candidate);assert.match(candidate.children[1].textContent,/部分条件不明确/);
+ assert.ok(candidate);assert.match(candidate.children[1].textContent,/some conditions are unclear/);
  candidate.children[2].onclick();assert.equal(sought,4);
  assert.equal(group.children.some(item=>item.children[0]?.src==='/media/video-B/frames/f5.jpg'),false);
 });
@@ -1060,13 +1080,13 @@ test('full-video uncertain candidates load additional pages with the same snapsh
   uncertain_candidate_total:9,uncertain_candidate_next_offset:c.body.candidate_offset ? null : 8,
   uncertain_candidates:[{t:c.body.candidate_offset || 0,uri:`/media/video-A/frames/${c.body.candidate_offset || 0}.jpg`}]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('find a person wearing white');
- const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='待核实候选画面'),more=group.children.find(item=>/加载更多待核实/.test(item.textContent));
+ const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames'),more=group.children.find(item=>/Load more unverified frames/.test(item.textContent));
  assert.ok(more);await more.onclick();
  const calls=h.calls.filter(c=>c.url.endsWith('/occurrences/search'));
  assert.equal(calls.at(-1).body.candidate_offset,8);
  assert.equal(calls.at(-1).body.snapshot,'a'.repeat(64));
  assert.ok(group.children.some(item=>item.children[0]?.src==='/media/video-A/frames/8.jpg'));
- assert.equal(group.children.some(item=>/加载更多待核实/.test(item.textContent)),false);
+ assert.equal(group.children.some(item=>/Load more unverified frames/.test(item.textContent)),false);
 });
 
 test('later matching pages stay above the separate candidate section', async()=>{
@@ -1077,9 +1097,9 @@ test('later matching pages stay above the separate candidate section', async()=>
    evidence:[{t:c.body.offset ? 4 : 1,uri:`/media/video-A/frames/${c.body.offset ? 4 : 1}.jpg`}]}],
   uncertain_candidate_total:1,uncertain_candidates:c.body.offset ? [] : [{t:8,uri:'/media/video-A/frames/candidate.jpg'}]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('find a person');
- const list=h.get('visual-search-results'),more=list.children.find(item=>/加载后续时间/.test(item.textContent));
+ const list=h.get('visual-search-results'),more=list.children.find(item=>/Load later times/.test(item.textContent));
  await more.onclick();
- const groupIndex=list.children.findIndex(item=>item.getAttribute('aria-label')==='待核实候选画面');
+ const groupIndex=list.children.findIndex(item=>item.getAttribute('aria-label')==='Unverified candidate frames');
  const matchIndex=list.children.findIndex(item=>item.children[0]?.src==='/media/video-A/frames/4.jpg');
  assert.ok(matchIndex>=0 && groupIndex>matchIndex);
  assert.equal(list.children[groupIndex].children.some(item=>item.children[0]?.src==='/media/video-A/frames/candidate.jpg'),true);
@@ -1093,7 +1113,7 @@ test('candidate time jump uses the pinned snapshot without model dispatch', asyn
   uncertain_candidate_next_offset:null,uncertain_candidates:[{t:c.body.candidate_time || 0,
    uri:`/media/video-A/frames/${c.body.candidate_time || 0}.jpg`}]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('find a person wearing white');
- const group=h.get('visual-search-results').children.find(item=>item.getAttribute('aria-label')==='待核实候选画面');
+ const group=h.get('visual-search-results').children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames');
  const controls=group.children.find(item=>item.className==='candidate-time-controls');
  controls.children[0].value='05:20';await controls.children[1].onclick();
  const request=h.calls.filter(c=>c.url.endsWith('/occurrences/search')).at(-1);
@@ -1113,8 +1133,8 @@ test('a late candidate page cannot replace a newer time jump', async()=>{
    uncertain_candidates:[{t:c.body.candidate_time || 0,uri:`/media/video-A/frames/${c.body.candidate_time || 0}.jpg`}]});
  });
  await h.window.FrameSeekPersistence.searchIndex('find a person');
- const group=h.get('visual-search-results').children.find(item=>item.getAttribute('aria-label')==='待核实候选画面');
- const older=group.children.find(item=>/加载更多待核实/.test(item.textContent)).onclick();
+ const group=h.get('visual-search-results').children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames');
+ const older=group.children.find(item=>/Load more unverified frames/.test(item.textContent)).onclick();
  const controls=group.children.find(item=>item.className==='candidate-time-controls');
  controls.children[0].value='05:20';await controls.children[1].onclick();
  pending.resolve(response({snapshot:'a'.repeat(64),knowledge_version:'b'.repeat(64),
@@ -1137,14 +1157,14 @@ test('late candidate pages cannot overwrite a newer attribute filter', async()=>
    uncertain_candidates:[{t:0,uri:'/media/video-A/frames/current.jpg'}]});
  });
  await h.window.FrameSeekPersistence.searchIndex('find a person');
- const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='待核实候选画面'),more=group.children.find(item=>/加载更多待核实/.test(item.textContent));
+ const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames'),more=group.children.find(item=>/Load more unverified frames/.test(item.textContent));
  const pending=more.onclick();
  h.get('visual-search-options').children[0].firstElementChild.checked=true;
  h.get('visual-search-apply').onclick();await tick();
  wait.resolve(response({snapshot:'a'.repeat(64),knowledge_version:'b'.repeat(64),
   uncertain_candidates:[{t:8,uri:'/media/video-A/frames/stale.jpg'}]}));
  await pending;
- const current=list.children.find(item=>item.getAttribute('aria-label')==='待核实候选画面');
+ const current=list.children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames');
  assert.equal(current.children.some(item=>item.children[0]?.src==='/media/video-A/frames/stale.jpg'),false);
  assert.ok(current.children.some(item=>item.children[0]?.src==='/media/video-A/frames/current.jpg'));
 });
@@ -1157,10 +1177,10 @@ test('candidate pages from a changed index version are not mixed', async()=>{
   uncertain_candidate_total:9,uncertain_candidate_next_offset:c.body.candidate_offset ? null : 8,
   uncertain_candidates:[{t:c.body.candidate_offset || 0,uri:`/media/video-A/frames/${c.body.candidate_offset || 0}.jpg`}]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('find a person');
- const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='待核实候选画面'),more=group.children.find(item=>/加载更多待核实/.test(item.textContent));
+ const list=h.get('visual-search-results'),group=list.children.find(item=>item.getAttribute('aria-label')==='Unverified candidate frames'),more=group.children.find(item=>/Load more unverified frames/.test(item.textContent));
  await more.onclick();
  assert.equal(group.children.some(item=>item.children[0]?.src==='/media/video-A/frames/8.jpg'),false);
- assert.match(h.get('visual-search-coverage').textContent,/候选画面加载失败/);
+ assert.match(h.get('visual-search-coverage').textContent,/Failed to load candidate frames/);
 });
 
 test('saved answer timeline keeps its request anchor when browsing the index', async()=>{
@@ -1179,11 +1199,11 @@ test('unversioned historical answer offers explicit latest-index lookup', async(
    : response({kind:'indexed_occurrences',knowledge_version:'latest',total_occurrences:0,
       conditions:[],available_conditions:[],coverage:{},occurrences:[]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex({question:'find person',answerRequestId:'legacy'});
- assert.match(h.get('visual-search-summary').textContent,/没有保存索引版本/);
- const latest=h.get('visual-search-results').children.find(item=>item.textContent==='查看最新索引');
+ assert.match(h.get('visual-search-summary').textContent,/does not have an indexed version saved/);
+ const latest=h.get('visual-search-results').children.find(item=>item.textContent==='View the latest index');
  assert.ok(latest);latest.onclick();await tick();
  assert.equal(h.calls.filter(c=>c.url.endsWith('/occurrences/search')).at(-1).body.answer_request_id,null);
- assert.match(h.get('visual-search-summary').textContent,/已有观察匹配/);
+ assert.match(h.get('visual-search-summary').textContent,/Existing observations match/);
 });
 
 test('visible text substring conditions are labelled as contains', async()=>{
@@ -1193,7 +1213,7 @@ test('visible text substring conditions are labelled as contains', async()=>{
   coverage:{catalog_frames:1,reviewed_frames:1,missing_frame_ids:[],uncertain_frame_ids:['f0'],exhaustive_under_index:false},
   occurrences:[]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex('找出文字“EXIT”');
- assert.match(h.get('visual-search-conditions').textContent,/text 包含 EXIT/);
+ assert.match(h.get('visual-search-conditions').textContent,/text contains EXIT/);
 });
 
 test('late OCR candidates cannot replace a newer attribute filter', async()=>{
@@ -1232,11 +1252,11 @@ test('OCR candidates supplement existing observations without replacing them', a
  assert.equal(list.children.length,2);
  assert.equal(list.children[0].children[0].src,'/media/video-A/frames/observed.jpg');
  assert.equal(list.children[1].children[0].src,'/media/video-A/frames/ocr.jpg');
- assert.match(list.children[1].children[1].textContent,/候选.*核实/);
- assert.match(h.get('visual-search-summary').textContent,/已有索引结果保留/);
- assert.match(h.get('visual-search-summary').textContent,/另找到 1 张/);
- assert.match(h.get('visual-search-coverage').textContent,/fixture · 已检索 2 \/ 2/);
- assert.match(h.get('visual-search-coverage').textContent,/OCR 检查 2 张抽样画面/);
+ assert.match(list.children[1].children[1].textContent,/candidate.*verified/);
+ assert.match(h.get('visual-search-summary').textContent,/Existing index results are retained/);
+ assert.match(h.get('visual-search-summary').textContent,/found 1 additional/);
+ assert.match(h.get('visual-search-coverage').textContent,/fixture · Reviewed observations for 2 \/ 2/);
+ assert.match(h.get('visual-search-coverage').textContent,/OCR checked 2 sampled frames/);
 });
 
 test('direct text-candidate action runs bounded OCR once and labels the result unverified', async()=>{
@@ -1251,7 +1271,7 @@ test('direct text-candidate action runs bounded OCR once and labels the result u
  assert.equal(h.window.FrameSeekPersistence.canSearchOcr(question),true);
  await h.window.FrameSeekPersistence.searchIndex({question,answerRequestId:'old-answer',autoOcr:true});
  assert.equal(h.calls.filter(c=>c.url.endsWith('/ocr-candidates')).length,1);
- assert.match(h.get('visual-search-summary').textContent,/未核实候选/);
+ assert.match(h.get('visual-search-summary').textContent,/unverified candidate/);
  assert.equal(h.get('visual-search-results').children.some(row=>row.children?.some(child=>child.src?.endsWith('/ocr.jpg'))),true);
  assert.equal(h.calls.some(c=>c.url==='/api/knowledge-chat/supplement'),false);
 });
@@ -1271,7 +1291,7 @@ test('direct OCR retains indexed hits and does not duplicate matching frame cand
  assert.deepEqual(rows.map(row=>row.children?.[0]?.src).filter(Boolean).sort(),
   ['/media/video-A/frames/observed.jpg','/media/video-A/frames/ocr.jpg'].sort());
  assert.equal(h.calls.filter(c=>c.url.endsWith('/ocr-candidates')).length,1);
- assert.match(h.get('visual-search-summary').textContent,/另找到 1 张未核实候选/);
+ assert.match(h.get('visual-search-summary').textContent,/found 1 additional unverified candidate/);
 });
 
 test('OCR candidates from a different index version do not mix with a historical answer', async()=>{
@@ -1285,9 +1305,9 @@ test('OCR candidates from a different index version do not mix with a historical
  await h.window.FrameSeekPersistence.searchIndex({question:'请在00:00至00:02找出文字“EXIT”',answerRequestId:'old-answer'});
  const list=h.get('visual-search-results');
  const button=list.children.find(item=>/OCR/.test(item.textContent));await button.onclick();
- assert.match(h.get('visual-search-summary').textContent,/索引版本已变化/);
+ assert.match(h.get('visual-search-summary').textContent,/Index version has changed/);
  assert.equal(list.children.some(row=>row.children?.some(child=>child.src?.endsWith('/new.jpg'))),false);
- const latest=list.children.find(item=>item.textContent==='查看最新索引');assert.ok(latest);latest.onclick();await tick();
+ const latest=list.children.find(item=>item.textContent==='View the latest index');assert.ok(latest);latest.onclick();await tick();
  const searches=h.calls.filter(c=>c.url.endsWith('/occurrences/search'));
  assert.equal(searches.at(-1).body.answer_request_id,null);
 });
@@ -1301,9 +1321,9 @@ test('OCR does not mix versioned candidates into an unversioned legacy result', 
    indexed_frames:2,terms:['EXIT'],available_conditions:[],coverage:{}}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex({question:'请在00:00至00:02找出文字“EXIT”',answerRequestId:'legacy',autoOcr:true});
  const list=h.get('visual-search-results');
- assert.match(h.get('visual-search-summary').textContent,/索引版本已变化/);
+ assert.match(h.get('visual-search-summary').textContent,/Index version has changed/);
  assert.equal(list.children.some(row=>row.children?.some(child=>child.src?.endsWith('/new.jpg'))),false);
- assert.ok(list.children.find(item=>item.textContent==='查看最新索引'));
+ assert.ok(list.children.find(item=>item.textContent==='View the latest index'));
 });
 
 test('OCR action offers only short valid English and Chinese time ranges', async()=>{
@@ -1343,7 +1363,7 @@ test('server-ineligible OCR never dispatches even if an older answer offered the
  await h.window.FrameSeekPersistence.searchIndex({question:'在00:04找红色文字“EXIT”',answerRequestId:'old',autoOcr:true});
  assert.equal(h.calls.filter(c=>c.url.endsWith('/ocr-candidates')).length,0);
  assert.equal(h.get('visual-search-results').children.some(item=>/OCR/.test(item.textContent)),false);
- assert.match(h.get('visual-search-coverage').textContent,/文字候选不可用/);
+ assert.match(h.get('visual-search-coverage').textContent,/Text candidates are unavailable/);
 });
 
 test('stale OCR action explains when OCR is no longer enabled', async()=>{
@@ -1354,7 +1374,7 @@ test('stale OCR action explains when OCR is no longer enabled', async()=>{
   coverage:{catalog_frames:1,reviewed_frames:1},occurrences:[]}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex({question:'在00:04找文字“EXIT”',answerRequestId:'old',autoOcr:true});
  assert.equal(h.calls.filter(c=>c.url.endsWith('/ocr-candidates')).length,0);
- assert.match(h.get('visual-search-coverage').textContent,/当前服务未启用 OCR/);
+ assert.match(h.get('visual-search-coverage').textContent,/OCR is not enabled for the current service/);
 });
 
 test('stale OCR action explains when index search requires clarification', async()=>{
@@ -1363,7 +1383,7 @@ test('stale OCR action explains when index search requires clarification', async
  h.setOverride(c=>c.url.endsWith('/occurrences/search') ? response({kind:'clarification_required',message:'请明确条件'}) : undefined);
  await h.window.FrameSeekPersistence.searchIndex({question:'在00:04找文字“EXIT”',answerRequestId:'old',autoOcr:true});
  assert.equal(h.calls.filter(c=>c.url.endsWith('/ocr-candidates')).length,0);
- assert.match(h.get('visual-search-coverage').textContent,/文字候选未运行/);
+ assert.match(h.get('visual-search-coverage').textContent,/text candidate is not running/);
 });
 
 test('late index pagination cannot overwrite a newer attribute filter', async()=>{
@@ -1474,7 +1494,7 @@ test("a cancelled query without evidence does not create a result card", async (
   const old=h.window.FrameSeekPersistence.ask("original");await tick();
   await h.get("cancel-question").onclick();
   assert.equal(h.answers.length,0);
-  assert.match(h.get("notice").textContent,/已停止/);
+  assert.match(h.get("notice").textContent,/has been stopped/);
   query.resolve(response(answer(requestId)));await old;
   assert.equal(h.answers.length,0);
 });
@@ -1633,7 +1653,7 @@ test('cloud supplement shows its request upper bound while running',async()=>{
  h.setOverride(c=>c.url==='/api/auto-chat/prepare' ? response({kind:'supplement_required',engine:'index',estimated_new_calls:4})
   : c.url==='/api/knowledge-chat/supplement' ? started.promise : undefined);
  const pending=h.window.FrameSeekPersistence.ask('find red hat');await tick();
- assert.match(h.get('notice').textContent,/最多 4 次云端请求/);
+ assert.match(h.get('notice').textContent,/at most 4 Cloud requests/);
  started.resolve(response({state:'waiting_budget'}));await pending;
  assert.equal(h.get('question').value,'find red hat');
 });
@@ -1651,7 +1671,7 @@ test('a supplement budget wait preserves the draft and explains the cause',async
  h.setOverride(c=>c.url==='/api/auto-chat/prepare' ? response({kind:'supplement_required',engine:'index'})
   : c.url==='/api/knowledge-chat/supplement' ? response({state:'waiting_budget'}) : undefined);
  await h.window.FrameSeekPersistence.ask('find red hat');
- assert.match(h.get('notice').textContent,/等待预算或授权/);
+ assert.match(h.get('notice').textContent,/needs budget approval/);
  assert.equal(h.get('question').value,'find red hat');
  assert.equal(h.calls.filter(c=>c.url==='/api/knowledge-chat/supplement').length,1);
  assert.equal(h.calls.some(c=>c.url==='/api/index-chat'),false);
@@ -1665,7 +1685,7 @@ test('failed supplement returns already indexed evidence without retrying the mo
  await h.window.FrameSeekPersistence.ask('find red hat');
  assert.equal(h.calls.filter(c=>c.url==='/api/knowledge-chat/supplement').length,1);
  assert.equal(h.calls.filter(c=>c.url==='/api/index-chat').length,1);
- assert.equal(h.answers.length,1);assert.match(h.get('notice').textContent,/结果不明.*已有索引/);
+ assert.equal(h.answers.length,1);assert.match(h.get('notice').textContent,/unknown.*existing index/);
 });
 
 test('budget-blocked supplement can show existing indexed evidence',async()=>{
@@ -1674,5 +1694,5 @@ test('budget-blocked supplement can show existing indexed evidence',async()=>{
   : c.url==='/api/index-chat' ? response({...answer(c.body.request_id),engine:'index'}) : undefined);
  await h.window.FrameSeekPersistence.ask('find red hat');
  assert.equal(h.calls.filter(c=>c.url==='/api/knowledge-chat/supplement').length,0);
- assert.equal(h.answers.length,1);assert.match(h.get('notice').textContent,/预算检查.*已有索引/);
+ assert.equal(h.answers.length,1);assert.match(h.get('notice').textContent,/预算检查.*Existing index/);
 });

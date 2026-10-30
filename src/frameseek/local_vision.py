@@ -220,7 +220,7 @@ def select_observations(client, cache, identity, question, context, rows, progre
         batch = [r for r in rows[offset : offset + 8] if r["analysis"]["observations"]]
         if not batch:
             continue
-        progress(f"正在检索视觉索引 {min(offset + 8, len(rows))}/{len(rows)} 段…")
+        progress(f"Searching visual index {min(offset + 8, len(rows))}/{len(rows)} segments…")
         knowledge = [
             {
                 "segment": r["window"],
@@ -288,7 +288,9 @@ def select_observations(client, cache, identity, question, context, rows, progre
         except ValueError as error:
             if not selected:
                 raise
-            warnings.append("后续索引检索未完成，已保留先前匹配：" + str(error)[:180])
+            warnings.append(
+                "Further index search did not finish; earlier matches retained: " + str(error)[:180]
+            )
             break
     claims = []
     for n, ids in sorted(selected.items()):
@@ -395,7 +397,7 @@ def refine_uncovered_frames(
         if not active():
             raise ValueError("query_cancelled")
         batch = remaining[offset : offset + 8]
-        progress(f"正在按问题复核未覆盖画面 {min(offset + 8, len(remaining))}/{len(remaining)} 张…")
+        progress(f"Reviewing unchecked frames {min(offset + 8, len(remaining))}/{len(remaining)}…")
         key = fingerprint(
             {
                 "identity": identity,
@@ -460,7 +462,7 @@ def refine_uncovered_frames(
                     continue
                 if not active():
                     raise ValueError("query_cancelled")
-                progress(f"正在单帧复核未确认画面 {hms(frame['t'])}…")
+                progress(f"Reviewing unconfirmed frame {hms(frame['t'])}…")
                 if check_single_frame(client, cache, identity, directory, question, context, frame):
                     seen.setdefault(n, set()).add(index)
                     descriptions.setdefault(
@@ -470,11 +472,15 @@ def refine_uncovered_frames(
             if not seen:
                 raise
             result["uncertainties"].append(
-                "尚未完成所有补充画面复核，保留已确认画面：" + str(error)[:180]
+                "Supplementary frame review did not finish; confirmed frames retained: "
+                + str(error)[:180]
             )
             break
     if not getattr(client, "confirm_batch_negatives", True):
-        result["uncertainties"].append("批量未匹配的画面未额外逐张复核，可能存在漏检。")
+        result["uncertainties"].append(
+            "Frames not matched in the batch were not individually rechecked; "
+            "matches may have been missed."
+        )
     result["claims"] = [
         {"segment": n, "frames": sorted(indices), "summary": descriptions[n]}
         for n, indices in sorted(seen.items())
@@ -488,7 +494,7 @@ def edit_grounded_answer(client, cache, identity, question, events):
         return None
     facts = [event["summary"] for event in events]
     appearance = appearance_request(question)
-    language = "中文" if any("\u4e00" <= c <= "\u9fff" for c in question) else "English"
+    language = "English"
     count_guard = (
         "多条观察可能属于同一个人或事件，条数不等于人数或发生次数。"
         "无法确定用户要求的精确总数时必须说明，不得猜测。"
@@ -543,12 +549,11 @@ def edit_grounded_answer(client, cache, identity, question, events):
             evidence["caption"] = result["caption"]
     if appearance:
         frame_count = sum(len(event["evidence"]) for event in events)
+        group = "group" if len(events) == 1 else "groups"
+        frame = "frame" if frame_count == 1 else "frames"
         return (
-            f"找到与「{result['caption']}」匹配的{len(events)}组画面"
-            f"（{frame_count}张引用），已按原视频时间列出。"
-            if language == "中文"
-            else f"Found {len(events)} matching groups for {result['caption']} "
-            f"with {frame_count} cited frames, listed at original video times."
+            f"Found {len(events)} matching {group} for {result['caption']} "
+            f"with {frame_count} cited {frame}, listed at original video times."
         )
     return result["answer"]
 
@@ -571,7 +576,7 @@ def group_index_windows(events):
                 "end": batch[-1]["end"],
                 "end_hms": batch[-1]["end_hms"],
                 "summary": " / ".join(event["summary"] for event in batch),
-                "action": "索引匹配画面组",
+                "action": "Indexed frame group",
                 "evidence": evidence,
             }
         )
@@ -607,7 +612,7 @@ def answer_source(root, source, question, context, progress, active):
             or _CLIENT.identity != configuration
             or _CLIENT.process.poll() is not None
         ):
-            progress("正在加载本机视觉模型…")
+            progress("Loading local vision model…")
             _CLIENT = LocalClient(*configuration, cache / "worker.log")
         started_at = time.time()
         try:
@@ -647,8 +652,8 @@ def run_source(
                 raise ValueError("local_index_interrupted_unknown")
             start, end = ordinal * 8, min(metadata["duration"], (ordinal + 1) * 8)
             progress(
-                f"正在识别视频 {ordinal + 1}/{windows} 段"
-                + (" · Token Factory" if cloud else " · 本机免费")
+                f"Analyzing video segment {ordinal + 1}/{windows}"
+                + (" · Token Factory" if cloud else " · Local")
             )
             decoded = frames(
                 directory,
@@ -738,7 +743,7 @@ def run_source(
             if not active() or source_digest(directory) != source_hash:
                 raise ValueError("local_source_changed_or_cancelled")
             return answer
-    progress("全片已扫描，正在根据已识别的画面回答…")
+    progress("Sampled segments scanned; preparing an answer from recognized frames…")
     result = select_observations(
         client, cache, identity, question, inference_context, rows, progress, active
     )
@@ -805,7 +810,7 @@ def run_source(
                 "end": end,
                 "start_hms": hms(start),
                 "end_hms": hms(end),
-                "action": "云端视觉观察" if cloud else "本机视觉观察",
+                "action": "Cloud vision observation" if cloud else "Local vision observation",
                 "summary": claim["summary"],
                 "support_level": "low",
                 "evidence": evidence,
@@ -815,29 +820,34 @@ def run_source(
         raise ValueError("local_answer_reference_invalid")
     if len(events) > 100:
         events = group_index_windows(events)
-        result["uncertainties"].append("相邻索引窗口已合并显示，不代表同一人物或同一事件。")
+        result["uncertainties"].append(
+            "Adjacent index windows are grouped for display; "
+            "they do not establish the same person or event."
+        )
     if events:
         if not active():
             raise ValueError("query_cancelled")
-        progress("已找到画面证据，正在整理回答和实际引用时间…")
+        progress("Frame evidence found; preparing the answer and source timestamps…")
         try:
             result["answer"] = edit_grounded_answer(client, cache, identity, question, events)
         except ValueError as error:
             result["answer"] = (
-                f"已保留{len(events)}段可回看的画面证据；回答整理未完成，请先查看引用。"
+                f"Retained {len(events)} reviewable evidence clips; "
+                "answer synthesis did not finish. Review the citations."
             )
-            result["uncertainties"].append("回答整理失败：" + str(error)[:180])
+            result["uncertainties"].append("Answer synthesis failed: " + str(error)[:180])
     else:
         result["answer"] = (
-            "在已建立的视觉索引中未找到足以统计目标事件的观察，不能据此给出总次数或排名。"
+            "The visual index has insufficient event observations to establish totals or rankings."
             if requires_aggregation(question)
             else (
-                "在已建立的视觉索引中未找到符合问题条件的观察。抽帧检索不能证明原视频中绝对不存在。"
+                "No indexed observations match the question. "
+                "Sampled retrieval cannot establish absence from the video."
             )
         )
         if scope:
             result["answer"] = (
-                f"本次范围 {hms(scope['start'])}–{hms(scope['end'])}。" + result["answer"]
+                f"Scope {hms(scope['start'])}–{hms(scope['end'])}. " + result["answer"]
             )
     if not active() or source_digest(directory) != source_hash:
         raise ValueError("local_source_changed_or_cancelled")
@@ -850,9 +860,13 @@ def run_source(
             "events": events,
             "unresolved": (
                 [
-                    "已扫描全片的分段抽帧，不等于逐帧无遗漏识别。",
+                    "Sampling across the video does not establish "
+                    "exhaustive frame-by-frame recognition.",
                     *(
-                        [f"已排除{invalid_claims}条无效帧引用，保留其余可回看的证据。"]
+                        [
+                            f"Excluded {invalid_claims} invalid frame references "
+                            "and retained the remaining reviewable evidence."
+                        ]
                         if invalid_claims
                         else []
                     ),

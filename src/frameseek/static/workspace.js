@@ -4,8 +4,11 @@
   const $ = id => document.getElementById(id);
   const ui = () => window.FrameSeekSessionUI;
   const store = () => window.FrameSeekWorkbench;
-  const demo = {id:"demo_parcel",name:"包裹移动 · 合成演示",metadata:{duration:18,audio:false},job:{state:"ready"}};
-  const labels = { queued:"等待预检", probing:"检查素材", captioning:"理解画面", transcribing:"转写音轨", indexing:"建立索引", ready:"可以提问", failed:"处理失败", cancelled:"已取消", awaiting_configuration:"等待模型配置" };
+  const demo = {id:"demo_basketball",name:"Basketball scenes · synthetic demo",metadata:{duration:18,audio:false},job:{state:"ready"}};
+  const legacyDemo = {id:"demo_parcel",name:"Parcel movement · synthetic demo",metadata:{duration:18,audio:false},job:{state:"ready"}};
+  const demos = new Map([[demo.id,demo],[legacyDemo.id,legacyDemo]]);
+  const isDemo = id => demos.has(id);
+  const labels = { queued:"Waiting for preflight", probing:"Checking video", captioning:"Analyzing frames", transcribing:"Transcribing audio", indexing:"Building index", ready:"Ready for questions", failed:"Processing failed", cancelled:"Cancelled", awaiting_configuration:"Waiting for model configuration" };
   const sourceReady = video => video.knowledge_status?.required_for_chat ? video.knowledge_status.state === 'ready' : video.job?.state === 'ready';
   function shortOcrRange(question, duration) {
     const scopeText=question.replace(/“[^”\n]*”|"[^"\n]*"|‘[^’\n]*’/g, match=>' '.repeat(match.length));
@@ -29,10 +32,10 @@
   }
   function sourceStatus(video) {
     const knowledge=video.knowledge_status;
-    if (!knowledge?.required_for_chat) return labels[video.job?.state] || '已上传';
-    const states={waiting_probe:'等待视频预检',waiting_processor:'等待索引配置',waiting_budget:'等待预算或授权',queued:'等待建立索引',indexing:'建立基础索引',ready:'可以提问',cancelled:'索引已停止',failed:'索引失败',unknown:'索引状态待确认',not_started:'等待建立索引'};
-    const status=states[knowledge.state] || '索引尚未就绪';
-    return knowledge.state==='indexing' && knowledge.total_segments ? `${status} · ${knowledge.completed_segments}/${knowledge.total_segments} 段` : status;
+    if (!knowledge?.required_for_chat) return labels[video.job?.state] || 'Uploaded';
+    const states={waiting_probe:'Waiting for video preflight',waiting_processor:'Waiting for index configuration',waiting_budget:'Waiting for budget or approval',queued:'Waiting to build index',indexing:'Building index',ready:'Ready for questions',cancelled:'Indexing stopped',failed:'Indexing failed',unknown:'Index status unknown',not_started:'Waiting to build index'};
+    const status=states[knowledge.state] || 'Index not ready';
+    return knowledge.state==='indexing' && knowledge.total_segments ? `${status} · ${knowledge.completed_segments}/${knowledge.total_segments} segments` : status;
   }
   const needsWatch = video => ["queued","probing","captioning","transcribing","indexing"].includes(video.job?.state) || (video.knowledge_status?.required_for_chat && ["waiting_probe","queued","indexing"].includes(video.knowledge_status.state));
   let session, current, currentVideo = demo, suspended = true, saving = null, lastSaved = "", lastSavedEdits = "", timer;
@@ -53,10 +56,10 @@
     $('local-engine-option').hidden=!localReady;
     $('local-engine-option').disabled=!localReady;
 
-    $('auto-engine-indicator').textContent=$('chat-engine').value==='auto' ? '自动' : '手动';
-    $('chat-engine').parentElement && ($('chat-engine').parentElement.hidden=currentVideo.id===demo.id);
-    $('search-index').hidden = currentVideo.id === demo.id || !sourceReady(currentVideo);
-    if(currentVideo.id!==demo.id && sourceReady(currentVideo)) $('composer-mode-text').textContent=currentVideo.knowledge_status?.required_for_chat ? (currentVideo.knowledge_status.processor_available===false ? '已有索引可查询 · 本机补查暂不可用' : currentVideo.knowledge_status.processor==='synthetic_fixture' ? '合成测试索引 · 模拟补查' : currentVideo.knowledge_status.processor==='tokenfactory' ? '基础索引 · 云端补查需预算准入' : '本机索引 · 按需补查') : $('chat-engine').value==='auto' ? 'Agent 自动选择 · 云端处理仍需预算准入' : $('chat-engine').value==='local' ? '本机视觉 · 免费' : $('chat-engine').value==='index' ? '已有索引 · 零模型调用' : $('chat-engine').value==='cloud' ? '云端视觉 · 需预算准入' : '模型分析 · 需预算准入';
+    $('auto-engine-indicator').textContent=$('chat-engine').value==='auto' ? 'Auto' : 'Manual';
+    $('chat-engine').parentElement && ($('chat-engine').parentElement.hidden=isDemo(currentVideo.id));
+    $('search-index').hidden = isDemo(currentVideo.id) || !sourceReady(currentVideo);
+    if(!isDemo(currentVideo.id) && sourceReady(currentVideo)) $('composer-mode-text').textContent=currentVideo.knowledge_status?.required_for_chat ? (currentVideo.knowledge_status.processor_available===false ? "There are already indexes available for query · Local supplementary query is temporarily unavailable" : currentVideo.knowledge_status.processor==='synthetic_fixture' ? "Synthetic test index · Simulated supplementary check" : currentVideo.knowledge_status.processor==='tokenfactory' ? "Basic index · Cloud supplementary check requires budget access" : "Native index · On-demand re-checking") : $('chat-engine').value==='auto' ? 'Agent chooses a route · cloud processing requires budget approval' : $('chat-engine').value==='local' ? 'Local vision · free' : $('chat-engine').value==='index' ? 'Saved index · no model calls' : $('chat-engine').value==='cloud' ? "Cloud Vision · Budget access required" : "Model analysis · Budget approval required";
     if(searchDesk && (searchDesk !== current?.id || searchGeneration !== currentVideo.generation)) {
       searchEpoch++; searchDesk=null; $('visual-search-dialog').close(); $('visual-search-results').replaceChildren();
     }
@@ -66,10 +69,10 @@
     select.replaceChildren();
     for (const video of sourceChoices.values()) {
       const option = document.createElement("option");
-      option.value = video.id; option.textContent = video.id === demo.id ? "箱子 · 包裹移动（合成演示）" : video.name;
-      option.dataset.thumbnail = video.id === demo.id ? "/media/demo_parcel/frames/0.jpg" : video.metadata?.preview?.[0]?.uri || "";
+      option.value = video.id; option.textContent = video.name;
+      option.dataset.thumbnail = isDemo(video.id) ? `/media/${video.id}/frames/0.jpg` : video.metadata?.preview?.[0]?.uri || "";
       const duration = Math.round(video.metadata?.duration || 0);
-      option.dataset.detail = `${Math.floor(duration / 60).toString().padStart(2,"0")}:${(duration % 60).toString().padStart(2,"0")} · ${video.id === demo.id ? "合成演示" : sourceStatus(video)}`;
+      option.dataset.detail = `${Math.floor(duration / 60).toString().padStart(2,"0")}:${(duration % 60).toString().padStart(2,"0")} · ${isDemo(video.id) ? "Synthetic demo" : sourceStatus(video)}`;
       select.append(option);
     }
     select.value = currentVideo.id;
@@ -86,11 +89,11 @@
     if (!video || video.id === currentVideo.id || sourceSwitching) { syncSourceSwitcher(); return; }
     sourceSwitching = true; syncSourceSwitcher();
     try { await openSource(video); }
-    catch (error) { ui().notify(`切换视频失败：${error.message}。当前调查和输入已保留。`); }
+    catch (error) { ui().notify(`Failed to switch video:${error.message}. Your current investigation and draft were kept.`); }
     finally { sourceSwitching = false; syncSourceSwitcher(); }
   }
 
-  function status(text, kind="") { $("save-state").textContent = kind === "saved" ? "已保存 ✓" : text; $("save-state").title = text; $("save-state").dataset.state = kind; }
+  function status(text, kind="") { $("save-state").textContent = kind === "saved" ? "Saved ✓" : text; $("save-state").title = text; $("save-state").dataset.state = kind; }
   async function api(path, method="GET", body) {
     const response = await fetch(path, {method, credentials:"same-origin", cache:"no-store",
       headers: body ? {"Content-Type":"application/json", "X-FS-CSRF":session.csrf} : method !== "GET" ? {"X-FS-CSRF":session.csrf} : {},
@@ -101,7 +104,7 @@
   }
   const snapshot = () => ui().snapshot();
   const wireSnapshot = state => {
-    if(!session?.query_reference_snapshots || currentVideo.id===demo.id)return state;
+    if(!session?.query_reference_snapshots || isDemo(currentVideo.id))return state;
     const reference = record => ({...record,query:{id:record.query.id,
       ...(record.query.parentTurn===undefined ? {} : {parentTurn:record.query.parentTurn})}});
     return {...state,records:(state.records || []).map(reference),pins:(state.pins || []).map(reference)};
@@ -154,17 +157,17 @@
     const state=snapshot(), encoded=JSON.stringify(state), edits=editSnapshot(state);
     if (encoded === lastSaved) return;
     const desk = current;
-    status("正在保存…");
+    status("Saving…");
     pendingSave={desk:desk.id,revision:desk.revision,draft:state.ui?.draft || ''};
     keepDraftShadow();
     saving = api(`/api/investigations/${desk.id}`, "PUT", {revision:desk.revision,state:wireSnapshot(JSON.parse(encoded))})
-      .then(result => { desk.revision=result.revision; lastSaved=encoded; lastSavedEdits=edits; status("已保存到本机","saved");
+      .then(result => { desk.revision=result.revision; lastSaved=encoded; lastSavedEdits=edits; status("Saved","saved");
         if(current===desk) {
           if($('question').value===(state.ui?.draft || '')) {try{sessionStorage.removeItem(draftShadowKey);}catch{}}
           else keepDraftShadow(state.ui?.draft || '');
         }
       })
-      .catch(error => { conflict=error.status===409; status(conflict ? "其他页面已修改 · 请重新打开" : "保存失败 · 点击重试", "error"); throw error; })
+      .catch(error => { conflict=error.status===409; status(conflict ? "Other pages have been modified · Please reopen" : "Save failed · Click to try again", "error"); throw error; })
       .finally(() => { saving=null; pendingSave=null; });
     await saving;
     if (current!==desk) return;
@@ -172,7 +175,7 @@
   }
   function changed() {
     if (suspended || conflict) return;
-    status("有未保存修改"); clearTimeout(timer);
+    status("There are unsaved changes"); clearTimeout(timer);
     timer=setTimeout(() => flush().catch(() => {}),500);
   }
   async function openDesk(id) {
@@ -183,7 +186,9 @@
       await stopRequest(); if (!owns(previousId,epoch)) return false;
       const desk=await api(`/api/investigations/${id}`);
       if (!owns(previousId,epoch)) return false;
-      const video=desk.video === "demo_parcel" ? demo : await api(`/api/videos/${desk.video}`);
+      const video=demos.get(desk.video) || await api(`/api/videos/${desk.video}`);
+      if (!owns(previousId,epoch)) return false;
+      if (isDemo(video.id)) await ui().prepareDemo?.(video.id);
       if (!owns(previousId,epoch)) return false;
       await flush(); if (!owns(previousId,epoch)) return false;
       if (desk.id===previousId && !conflict && current.revision>desk.revision) {desk.state=snapshot();desk.revision=current.revision;}
@@ -191,7 +196,7 @@
       current=desk; currentVideo=video; conflict=false;
       ui().restore({...desk.state,title:desk.state.title || desk.title},video);
       const restored=snapshot();lastSaved=JSON.stringify(restored);lastSavedEdits=editSnapshot(restored);
-      remember(); syncSourceSwitcher(); status("已恢复调查","saved");
+      remember(); syncSourceSwitcher(); status("Investigation restored","saved");
       $("workspace-library").close();
       suspended=false;
       if(recoverDraftShadow())changed();
@@ -208,7 +213,9 @@
     try {
       await flush(); if (!owns(previousId,epoch)) return false;
       await stopRequest(); if (!owns(previousId,epoch)) return false;
-      const desk=await api("/api/investigations","POST",{video_id:video.id,title:video.id === "demo_parcel" ? "未命名调查" : video.name.replace(/\.[^.]+$/, "")});
+      if (isDemo(video.id)) await ui().prepareDemo?.(video.id);
+      if (!owns(previousId,epoch)) return false;
+      const desk=await api("/api/investigations","POST",{video_id:video.id,title:video.id === demo.id ? "Basketball demo" : video.name.replace(/\.[^.]+$/, "")});
       if (!owns(previousId,epoch)) return false;
       await flush(); if (!owns(previousId,epoch)) return false;
       suspended=true;
@@ -224,7 +231,7 @@
       return true;
     } finally { if (epoch===requestEpoch) {suspended=false;ui().busy(false);} }
   }
-  function item(title, detail, action, actionLabel="打开") {
+  function item(title, detail, action, actionLabel="Open") {
     const row=document.createElement("article"); row.className="library-row";
     const copy=document.createElement("div"); const name=document.createElement("strong"); name.textContent=title;
     const meta=document.createElement("small");meta.textContent=detail;copy.append(name,meta);row.append(copy);
@@ -238,63 +245,63 @@
     if(!line)return;
     const desk=current?.id,epoch=requestEpoch,check=++budgetEpoch;
     $('chat-engine').disabled=!!currentVideo.knowledge_status?.required_for_chat;
-    if(currentVideo.knowledge_status?.required_for_chat) {line.hidden=false;line.textContent=currentVideo.knowledge_status.processor_available===false?'已有索引可查询；本机补查暂不可用。':'自动读取基础索引；需要时只补查相关画面。';return;}
-    if(currentVideo.id==='demo_parcel') {line.hidden=true;return;}
-    if($('chat-engine').value==='auto') {line.hidden=false;line.textContent='先检查已有证据，必要时选择可用视觉分析；云端处理仍受原预算限制，失败不会自动切换重试。';return;}
+    if(currentVideo.knowledge_status?.required_for_chat) {line.hidden=false;line.textContent=currentVideo.knowledge_status.processor_available===false?"There is an existing index that can be queried; local retrieval is temporarily unavailable.":"Automatically read the basic index; only check relevant screens when needed.";return;}
+    if(isDemo(currentVideo.id)) {line.hidden=true;return;}
+    if($('chat-engine').value==='auto') {line.hidden=false;line.textContent="Check existing evidence first, and select available visual analysis if necessary; cloud processing is still limited by the original budget, and failure will not automatically switch to retry.";return;}
     if($('chat-engine').value==='local') {
-      line.hidden=false;line.textContent='本机视觉识别，不使用 Token Factory 额度。首次扫描全片，完成的片段会缓存；不会自动调用付费 API。';return;
+      line.hidden=false;line.textContent="Native visual recognition, without using Token Factory quota. Scan the entire film for the first time, and the completed fragments will be cached; the paid API will not be automatically called.";return;
     }
     try {
       const data=await api('/api/runtime/status');
       if(check!==budgetEpoch || !owns(desk,epoch))return;
       const b=data.budget;
       line.hidden=false;
-      const prefix=$('chat-engine').value==='index' ? '当前索引问答不调用模型，可继续检索已有数据。' : '';
+      const prefix=$('chat-engine').value==='index' ? 'Index questions use existing data without model calls.' : '';
       line.textContent=prefix+(b && b.remaining_calls===0
-        ? `模型请求已用完 ${b.call_cap} / ${b.call_cap} 次；不会再调用模型，已有回答和证据仍可回看。`
+        ? `Model requests exhausted ${b.call_cap} / ${b.call_cap} times; the model will not be called again, and existing answers and evidence can still be reviewed.`
         : !data.dispatch_prerequisites_met
-        ? '真实聊天暂未就绪，可在「更多 → 模型与预算」检查；已有证据仍可回看。'
-        : b?.visual_search_calls === 1 ? `剩余 ${b.remaining_calls} / ${b.call_cap} 次模型请求 · 视觉查找通常预留1次，复核最多8张索引候选；不代表已穷举全片。`
-        : b ? `剩余 ${b.remaining_calls} / ${b.call_cap} 次模型请求 · 指定不超过60秒的时段通常预留 ${b.short_window_calls} 次；跨时段检索需要更多。`
-        : '预算状态未确认，请先检查模型与预算；不代表可以发送。');
-    }catch(error){if(check===budgetEpoch && owns(desk,epoch)){line.hidden=false;line.textContent='预算状态读取失败，发送前仍需通过账本检查；不会自动调用模型。';}}
+        ? "Model analysis is not ready. Check More → Models & budget. Existing evidence is still available."
+        : b?.visual_search_calls === 1 ? `${b.remaining_calls} / ${b.call_cap} model requests remaining · Visual search usually reserves one request and reviews up to 8 indexed candidates; it does not exhaustively check the video.`
+        : b ? `${b.remaining_calls} / ${b.call_cap} model requests remaining · A period of up to 60 seconds usually reserves ${b.short_window_calls} requests; searching across periods requires more.`
+        : "Budget status is unconfirmed. Check Models & budget before sending.");
+    }catch(error){if(check===budgetEpoch && owns(desk,epoch)){line.hidden=false;line.textContent="The budget status reading failed and the ledger check still needs to be passed before sending; the model will not be automatically called.";}}
   }
   async function showRuntime() {
     const dialog=$("agent-setup-dialog"), button=$("refresh-agent-setup");
     if(!dialog.open) dialog.showModal();
-    button.disabled=true;$("agent-setup-summary").textContent="正在读取本机配置…";
+    button.disabled=true;$("agent-setup-summary").textContent="Reading local configuration...";
     try {
       const data=await api("/api/runtime/status");
       const provider=data.provider==="gemini" ? "Gemini · AI Builder Cup" : data.provider==="tokenfactory" ? "NVIDIA Nemotron · Token Factory" : "NVIDIA / Nebius";
       $("agent-setup-summary").textContent=data.dispatch_prerequisites_met
-        ? `${provider}：聊天准入条件齐备，已有索引的视频可直接提问，无需重新分析。检查仅读取配置和账本，不能证明每个回答准确。`
-        : `${provider}：真实分析尚未就绪。演示、上传预检、播放和调查保存仍可使用。`;
+        ? `${provider}: Chat access conditions are complete, and videos that have been indexed can be asked directly without re-analysis. The check only reads the configuration and ledger and cannot prove that every answer is accurate.`
+        : `${provider}: Real analysis is not yet ready. The demo, upload preflight, playback, and saved investigations are still available.`;
       const list=$("agent-readiness-checks");list.replaceChildren();
       for(const check of data.checks) {
         const row=document.createElement("article");row.className="agent-check";
         const heading=document.createElement("strong");heading.textContent=check.label;
-        const state=document.createElement("span");state.textContent=check.state==="available" ? "已提供" : "待准备";state.dataset.state=check.state;
+        const state=document.createElement("span");state.textContent=check.state==="available" ? "Provided" : "Not ready";state.dataset.state=check.state;
         const detail=document.createElement("p");detail.textContent=check.detail;
         row.append(heading,state,detail);list.append(row);
       }
       const models=$("agent-model-roles");models.replaceChildren();
       for(const model of data.models) {
-        const row=document.createElement("p");row.textContent=`${model.label}${model.optional ? "（可选）" : ""} · ${model.configured ? `${model.model} / ${model.revision} · ${model.key_present ? "凭据已配置" : "缺少凭据"}` : "未配置"}`;
+        const row=document.createElement("p");row.textContent=`${model.label}${model.optional ? " (optional)" : ""} · ${model.configured ? `${model.model} / ${model.revision} · ${model.key_present ? "Credentials configured" : "Credentials missing"}` : "Not configured"}`;
         models.append(row);
       }
-    }catch(error){$("agent-setup-summary").textContent=`读取失败：${error.message}。可重新检查。`;}
+    }catch(error){$("agent-setup-summary").textContent=`Read failed:${error.message}. Can be rechecked.`;}
     finally {button.disabled=false;}
   }
   async function searchSavedFrames(savedQuestion=null) {
     const question=typeof savedQuestion==='string' ? savedQuestion.trim() : typeof savedQuestion?.question==='string' ? savedQuestion.question.trim() : $('question').value.trim();
     const answerRequestId=typeof savedQuestion?.answerRequestId==='string' ? savedQuestion.answerRequestId : null;
     let autoOcr=!!savedQuestion?.autoOcr;
-    if(!question) {ui().notify('先在输入框描述要找的内容，再查找已有画面；不会发送给模型。');return;}
+    if(!question) {ui().notify("First describe what you are looking for in the input box, and then search for existing images; it will not be sent to the model.");return;}
     const desk=current?.id, epoch=requestEpoch, source=currentVideo, generation=source.generation, check=++searchEpoch;
-    if(!desk || source.id===demo.id || !sourceReady(source))return;
+    if(!desk || isDemo(source.id) || !sourceReady(source))return;
     const dialog=$('visual-search-dialog'), list=$('visual-search-results');
     searchDesk=desk; searchGeneration=generation; list.replaceChildren();
-    $('visual-search-summary').textContent='正在检索已有索引，不调用模型…';
+    $('visual-search-summary').textContent="Retrieving existing index, not calling model...";
     if(!dialog.open)dialog.showModal();
     let offset=0, snapshot=null, displayed=0, selectedConditions=null, filterRevision=0, candidateSection=null;
     const active=()=>check===searchEpoch && owns(desk,epoch) && currentVideo.id===source.id && currentVideo.generation===generation && dialog.open;
@@ -304,7 +311,7 @@
     $('visual-search-apply').onclick=()=>{
       if(!active())return;
       selectedConditions=[...$('visual-search-options').children].filter(row=>row.firstElementChild.checked).map(row=>JSON.parse(row.dataset.condition));
-      if(!selectedConditions.length){ui().notify('请至少选择一个明确条件。');return;}
+      if(!selectedConditions.length){ui().notify("Please select at least one explicit condition.");return;}
       filterRevision++;offset=0;snapshot=null;displayed=0;candidateSection=null;list.replaceChildren();$('visual-search-track').replaceChildren();loadPage();
     };
     async function loadPage(button=null) {
@@ -328,39 +335,39 @@
         if(data.kind==='clarification_required') {
           $('visual-search-summary').textContent=data.message;
           $('visual-search-coverage').textContent=autoOcr
-            ? '文字候选未运行：请先按提示明确检索条件；已有索引未改变，未调用模型。'
-            : '未执行新的视觉识别；明确条件后可继续检索已有索引。';return;
+            ? "The text candidate is not running: please follow the prompts to clarify the search conditions first; the existing index has not been changed and the model has not been called."
+            : "No new visual recognition is performed; existing indexes can be retrieved after clarifying the conditions.";return;
         }
         if(button)button.remove();
         const structured=data.kind==='indexed_occurrences', rows=structured ? data.occurrences : data.frames;
         displayed+=rows.length;
-        $('visual-search-conditions').textContent=data.conditions?.length ? `${data.explicit_conditions ? "已选属性（替代原问题）" : "全部条件"}：${data.conditions.map(c=>`${c.field} ${c.operator==='is_not' ? '不是' : c.operator==='contains' || c.operator==='color_item' ? '包含' : '是'} ${c.value}`).join('；')}（同一物体）` : `检索概念：${(data.terms || []).join(' + ')}`;
+        $('visual-search-conditions').textContent=data.conditions?.length ? `${data.explicit_conditions ? "Selected conditions (replace the original question)" : "All conditions"}：${data.conditions.map(c=>`${c.field} ${c.operator==='is_not' ? 'is not' : c.operator==='contains' || c.operator==='color_item' ? 'contains' : 'is'} ${c.value}`).join('；')}(same object)` : `Search concepts:${(data.terms || []).join(' + ')}`;
         const coverage=data.coverage || {};
         $('visual-search-summary').textContent=structured
-          ? `已有观察匹配 ${displayed} / ${data.total_occurrences} ${coverage.catalog_complete === false ? '个抽样画面时点（不是人数或事件次数）' : '个区间或时点'}；本次模型调用 0 次。`
-          : `已检索全部 ${data.indexed_frames} 张保存画面的描述，已显示 ${displayed} / ${data.total_candidates ?? rows.length} 张文字候选。候选不等于满足全部条件；不是整段视频的全部出现时间。没有新增模型调用。`;
+          ? `Existing observations match ${displayed} / ${data.total_occurrences} ${coverage.catalog_complete === false ? "sampled frame times (not a count of people or events)" : "intervals or times"}. No model calls.`
+          : `Searched descriptions of all ${data.indexed_frames} saved frames; showing ${displayed} / ${data.total_candidates ?? rows.length} text candidates. Candidates are not confirmed matches and do not represent every appearance in the video. No model calls.`;
         $('visual-search-coverage').textContent=structured
-          ? `${data.provenance} · 已检索 ${coverage.reviewed_frames} / ${coverage.catalog_frames} 张索引画面的观察；缺少观察 ${coverage.missing_frame_ids?.length || 0} 张，不确定 ${coverage.uncertain_frame_ids?.length || 0} 张。${coverage.catalog_complete === false ? '索引仅包含抽样画面，并非逐帧检查。' : ''}${coverage.exhaustive_under_index ? '已遍历索引内全部源帧；识别准确性依赖原观察。' : '覆盖未完成，不能断言全部出现时间或全片不存在。'}`
-          : '缺少全片结构化观察索引。以下只检索已有描述，不能确认同一主体的多个属性，也不能推断连续出现区间。';
+          ? `${data.provenance} · Reviewed observations for ${coverage.reviewed_frames} / ${coverage.catalog_frames} indexed frames; ${coverage.missing_frame_ids?.length || 0} missing and ${coverage.uncertain_frame_ids?.length || 0} uncertain. ${coverage.catalog_complete === false ? "The index contains sampled frames, not every video frame. " : ""}${coverage.exhaustive_under_index ? "All source frames in the index were searched; accuracy depends on the original observations." : "Coverage is incomplete; absence and all appearance times cannot be established."}`
+          : "Full film structured observation index missing. The following only searches for existing descriptions, and cannot confirm multiple attributes of the same subject, nor can it infer continuous occurrence intervals.";
         if(autoOcr && (data.ocr_eligible!==true || !canSearchOcr(question))) {
           autoOcr=false;
           $('visual-search-coverage').textContent+=!currentVideo?.knowledge_status?.ocr_candidates_available
-            ? ' 文字候选未运行：当前服务未启用 OCR。未调用模型。'
-            : ' 文字候选不可用：目前只支持英文和数字；该时段也可能没有可用抽样画面，或问题包含不支持的条件。未调用模型。';
+            ? " Text candidate not running: OCR is not enabled for the current service. Model not called."
+            : " Text candidates are unavailable: currently only English and numbers are supported; there may be no sampling frames available during that time period, or the question may contain unsupported conditions. Model not called.";
         }
-        if(!rows.length) {const empty=document.createElement('p');empty.textContent=coverage.exhaustive_under_index ? '当前已有观察中没有匹配。' : '当前索引未找到匹配；未检查范围仍可能出现。';list.append(empty);}
+        if(!rows.length) {const empty=document.createElement('p');empty.textContent=coverage.exhaustive_under_index ? "There are currently no matches in existing observations." : "No match found for current index; unchecked ranges may still occur.";list.append(empty);}
         if(!offset && !selectedConditions && data.ocr_eligible===true && canSearchOcr(question)) {
-          const ocr=document.createElement('button');ocr.type='button';ocr.textContent='查找此时段的文字候选 · OCR';
+          const ocr=document.createElement('button');ocr.type='button';ocr.textContent="Find text candidates for this period · OCR";
           ocr.onclick=async()=>{
             if(!currentResult())return;
-            ocr.disabled=true;$('visual-search-summary').textContent='正在查找文字候选…';
+            ocr.disabled=true;$('visual-search-summary').textContent="Looking for text candidates…";
             try {
               const candidates=await api(`/api/videos/${source.id}/ocr-candidates`,'POST',{question,generation});
               if(!currentResult())return;
               if(!data.knowledge_version || candidates.knowledge_version!==data.knowledge_version) {
                 ocr.remove();
-                $('visual-search-summary').textContent='索引版本已变化或无法确认；旧回答与新文字候选未混合。请从当前视频重新查询最新索引。';
-                const latest=document.createElement('button');latest.type='button';latest.textContent='查看最新索引';
+                $('visual-search-summary').textContent="Index version has changed or cannot be confirmed; old answers are not mixed with new text candidates. Please re-query the latest index from the current video.";
+                const latest=document.createElement('button');latest.type='button';latest.textContent="View the latest index";
                 latest.onclick=()=>{if(currentResult())searchSavedFrames({question});};
                 list.append(latest);
                 return;
@@ -368,18 +375,18 @@
               ocr.remove();
               const observed=new Set(structured ? rows.flatMap(entry=>(entry.evidence || []).map(frame=>frame.frame_id).filter(Boolean)) : rows.map(frame=>frame.frame_id).filter(Boolean));
               const newCandidates=candidates.frames.filter(frame=>!observed.has(frame.frame_id));
-              $('visual-search-summary').textContent=`已有索引结果保留；OCR 另找到 ${newCandidates.length} 张未核实候选画面，请自行回看。`;
-              $('visual-search-coverage').textContent+=` OCR 检查 ${candidates.checked_frames} 张抽样画面，${candidates.failed_frames} 张处理失败；不能据此断言其他时间不存在。未调用云端模型。`;
+              $('visual-search-summary').textContent=`Existing index results are retained; OCR found ${newCandidates.length} additional unverified candidate frames. Review them in the source video.`;
+              $('visual-search-coverage').textContent+=` OCR checked ${candidates.checked_frames} sampled frames; ${candidates.failed_frames} failed. This cannot establish absence at other times. No cloud model was called.`;
               for(const frame of newCandidates) {
                 if(!frame.uri.startsWith(`/media/${source.id}/frames/`))continue;
                 const row=document.createElement('article'), image=document.createElement('img'), caption=document.createElement('p'), seek=document.createElement('button');
-                image.src=frame.uri;image.alt='OCR 文字候选，需回看核实';image.loading='lazy';
-                caption.textContent='OCR 候选 · 待核实，文字可能识别错误';
-                seek.type='button';seek.textContent=`回看 ${Math.floor(frame.t/60).toString().padStart(2,'0')}:${(frame.t%60).toFixed(3).padStart(6,'0')} · 待核实`;
+                image.src=frame.uri;image.alt="OCR text candidate, need to review and verify";image.loading='lazy';
+                caption.textContent="OCR candidate · To be verified, the text may be recognized incorrectly";
+                seek.type='button';seek.textContent=`Replay ${Math.floor(frame.t/60).toString().padStart(2,'0')}:${(frame.t%60).toFixed(3).padStart(6,'0')} · To be verified`;
                 seek.onclick=()=>{if(!currentResult())return;dialog.close();ui().seek(frame.t,seek);};
                 row.append(image,caption,seek);list.append(row);
               }
-            } catch(error) {if(currentResult())$('visual-search-summary').textContent='文字候选未完成。请指定不超过 8 秒的时间段和引号中的文字，或稍后重试；已有索引未改变。';}
+            } catch(error) {if(currentResult())$('visual-search-summary').textContent="The text candidate is not completed. Please specify a time period of no longer than 8 seconds and text in quotes, or try again later; existing indexes have not changed.";}
             finally {ocr.disabled=false;}
           };list.append(ocr);
           if(autoOcr){autoOcr=false;await ocr.onclick();if(!currentResult())return;}
@@ -389,14 +396,14 @@
           if(!frame?.uri.startsWith(`/media/${source.id}/frames/`))continue;
           const row=document.createElement('article'), image=document.createElement('img');
           const caption=document.createElement('p'), seek=document.createElement('button');
-          image.src=frame.uri; image.alt=structured ? '已有结构化观察的原视频证据' : '原视频已保存的候选画面';image.loading='lazy';
-          caption.textContent=structured ? `同一画面主体满足全部条件 · ${entry.evidence_count} 帧支持；不代表跨镜头同一个人。` : frame.caption;
+          image.src=frame.uri; image.alt=structured ? "Original video evidence of structured observation is available" : "Saved candidate frames of the original video";image.loading='lazy';
+          caption.textContent=structured ? `The subject of the same picture meets all conditions · ${entry.evidence_count} Frame support; does not represent the same person across shots.` : frame.caption;
           const clock=t=>`${Math.floor(t/60).toString().padStart(2,'0')}:${(t%60).toFixed(3).padStart(6,'0')}`;
-          seek.textContent=structured ? `回看 ${clock(entry.start)}${entry.end==null ? ' · 抽样时点' : `—${clock(entry.end)}`} · 已有观察` : `回看 ${clock(frame.t)} · 索引候选`;
+          seek.textContent=structured ? `Replay ${clock(entry.start)}${entry.end==null ? ' · Sampled time' : `—${clock(entry.end)}`} · Observed` : `Replay ${clock(frame.t)} · Index candidates`;
           seek.type='button';seek.onclick=()=>{if(!currentResult())return;dialog.close();ui().seek(frame.t,seek);};
           if(structured && data.duration>0) {
             const marker=document.createElement('button');marker.type='button';
-            marker.textContent='';marker.title=seek.textContent;marker.setAttribute('aria-label',`时间线 ${clock(entry.start)}`);
+            marker.textContent='';marker.title=seek.textContent;marker.setAttribute('aria-label',`Timeline ${clock(entry.start)}`);
             marker.style.left=`${100*entry.start/data.duration}%`;
             marker.style.width=`${Math.max(.5,100*((entry.end ?? entry.start+.001)-entry.start)/data.duration)}%`;
             marker.onclick=seek.onclick;$('visual-search-track').append(marker);$('visual-search-track').hidden=false;
@@ -405,13 +412,13 @@
         }
         if(!offset && structured && Array.isArray(data.uncertain_candidates) && data.uncertain_candidates.length) {
           candidateSection=document.createElement('section');candidateSection.className='uncertain-candidate-group';
-          candidateSection.setAttribute('aria-label','待核实候选画面');
+          candidateSection.setAttribute('aria-label',"Unverified candidate frames");
           const heading=document.createElement('p');
-          heading.textContent=`待核实候选 · 共 ${data.uncertain_candidate_total} 张；部分条件不明确，不计入匹配结果。`;
+          heading.textContent=`Unverified candidates · ${data.uncertain_candidate_total} total; some conditions are unclear, so these are excluded from matches.`;
           const controls=document.createElement('div'), timeInput=document.createElement('input'), jump=document.createElement('button');
-          controls.className='candidate-time-controls';timeInput.type='text';timeInput.placeholder='例如 05:20';
-          timeInput.setAttribute('aria-label','候选画面起始时间');
-          jump.type='button';jump.textContent='跳到时间';controls.append(timeInput,jump);
+          controls.className='candidate-time-controls';timeInput.type='text';timeInput.placeholder="For example 05:20";
+          timeInput.setAttribute('aria-label',"Candidate picture start time");
+          jump.type='button';jump.textContent="jump to time";controls.append(timeInput,jump);
           candidateSection.append(heading,controls);list.append(candidateSection);
           const candidateSnapshot=data.snapshot, candidateVersion=data.knowledge_version;
           let candidateEpoch=0;
@@ -419,15 +426,15 @@
             for(const frame of page.uncertain_candidates || []) {
               if(typeof frame.uri!=='string' || !frame.uri.startsWith(`/media/${source.id}/frames/`) || !Number.isFinite(frame.t) || frame.t<0 || frame.t>=data.duration)continue;
               const row=document.createElement('article'), image=document.createElement('img'), caption=document.createElement('p'), seek=document.createElement('button');
-              image.src=frame.uri;image.alt='部分条件不明确的候选画面';image.loading='lazy';
-              caption.textContent='候选画面 · 部分条件不明确，请回看核实';
-              seek.type='button';seek.textContent=`回看 ${Math.floor(frame.t/60).toString().padStart(2,'0')}:${(frame.t%60).toFixed(3).padStart(6,'0')} · 待核实`;
+              image.src=frame.uri;image.alt="Candidate pictures with unclear conditions";image.loading='lazy';
+              caption.textContent="Unverified candidate · some conditions are unclear; review the frame";
+              seek.type='button';seek.textContent=`Replay ${Math.floor(frame.t/60).toString().padStart(2,'0')}:${(frame.t%60).toFixed(3).padStart(6,'0')} · To be verified`;
               seek.onclick=()=>{if(!currentResult())return;dialog.close();ui().seek(frame.t,seek);};
               row.append(image,caption,seek);candidateSection.append(row);
             }
             if(page.uncertain_candidate_next_offset!=null) {
               const moreCandidates=document.createElement('button');moreCandidates.type='button';
-              moreCandidates.textContent='加载更多待核实画面 · 不调用模型';
+              moreCandidates.textContent="Load more unverified frames · No model calls";
               moreCandidates.onclick=async()=>{
                 if(!currentResult())return;const request=++candidateEpoch;moreCandidates.disabled=true;
                 try {
@@ -438,7 +445,7 @@
                   if(!currentResult() || request!==candidateEpoch)return;
                   if(next.snapshot!==candidateSnapshot || next.knowledge_version!==candidateVersion)throw new Error('index_version_changed');
                   moreCandidates.remove();appendCandidates(next);
-                } catch(error) {if(currentResult() && request===candidateEpoch)$('visual-search-coverage').textContent+=' 候选画面加载失败，请重新打开索引；未调用模型。';}
+                } catch(error) {if(currentResult() && request===candidateEpoch)$('visual-search-coverage').textContent+=" Failed to load candidate frames. Reopen the index; no model was called.";}
                 finally {moreCandidates.disabled=false;}
               };candidateSection.append(moreCandidates);
             }
@@ -447,7 +454,7 @@
             if(!currentResult())return;
             const match=timeInput.value.trim().match(/^(\d{1,3}):([0-5]\d)$/);
             const seconds=match ? Number(match[1])*60+Number(match[2]) : NaN;
-            if(!Number.isFinite(seconds) || seconds>=data.duration) {heading.textContent='请输入视频范围内的时间，例如 05:20。';return;}
+            if(!Number.isFinite(seconds) || seconds>=data.duration) {heading.textContent="Please enter a time within the video range, for example 05:20.";return;}
             const request=++candidateEpoch;jump.disabled=true;
             try {
               const page=await api(`/api/videos/${source.id}/occurrences/search`,'POST',{
@@ -457,10 +464,10 @@
               if(!currentResult() || request!==candidateEpoch)return;
               if(page.snapshot!==candidateSnapshot || page.knowledge_version!==candidateVersion)throw new Error('index_version_changed');
               candidateSection.replaceChildren(heading,controls);
-              heading.textContent=`待核实候选 · 共 ${data.uncertain_candidate_total} 张；显示 ${timeInput.value.trim()} 起的画面，不计入匹配结果。`;
-              if(!page.uncertain_candidates?.length) {const empty=document.createElement('p');empty.textContent='此时间之后没有待核实候选。';candidateSection.append(empty);}
+              heading.textContent=`Unverified candidates · ${data.uncertain_candidate_total} total; showing frames from ${timeInput.value.trim()}. These are excluded from matches.`;
+              if(!page.uncertain_candidates?.length) {const empty=document.createElement('p');empty.textContent="There are no candidates to be verified after this time.";candidateSection.append(empty);}
               appendCandidates(page);
-            } catch(error) {if(currentResult() && request===candidateEpoch)heading.textContent='跳转失败，请重新打开索引；未调用模型。';}
+            } catch(error) {if(currentResult() && request===candidateEpoch)heading.textContent="Jump failed, please reopen the index; the model was not called.";}
             finally {jump.disabled=false;}
           };
           appendCandidates(data);
@@ -468,15 +475,15 @@
         if(data.next_offset!=null) {
           offset=data.next_offset;snapshot=data.snapshot;
           const more=document.createElement('button');more.type='button';
-          more.textContent='加载后续时间 · 不调用模型';more.onclick=()=>currentResult() && loadPage(more);
+          more.textContent="Load later times · No model calls";more.onclick=()=>currentResult() && loadPage(more);
           candidateSection ? list.insertBefore(more,candidateSection) : list.append(more);
         }
       } catch(error) {
         if(currentResult() && error.message==='index_answer_version_unavailable') {
-          $('visual-search-summary').textContent='这条旧回答没有保存索引版本，不能确认原有依据。可查看最新索引；原回答和聊天不会改变。';
-          const latest=document.createElement('button');latest.type='button';latest.textContent='查看最新索引';
+          $('visual-search-summary').textContent="This old answer does not have an indexed version saved, so the original basis cannot be confirmed. The latest index can be viewed; original answers and chats will not change.";
+          const latest=document.createElement('button');latest.type='button';latest.textContent="View the latest index";
           latest.onclick=()=>{if(currentResult())searchSavedFrames({question});};list.append(latest);
-        } else if(currentResult())$('visual-search-summary').textContent=`索引暂不可用：${error.message}。原问题和聊天保留，未调用模型。`;
+        } else if(currentResult())$('visual-search-summary').textContent=`Index is temporarily unavailable:${error.message}. The original question and chat are retained, and the model is not called.`;
       }
       finally {if(button)button.disabled=false;}
     }
@@ -487,9 +494,9 @@
     const deskId=current?.id, epoch=requestEpoch, token=++libraryEpoch;
     const active=()=>owns(deskId,epoch) && token===libraryEpoch;
     await flush(); if (!active()) return; libraryNotice("");
-    $("library-title").textContent=kind === "videos" ? "素材库" : "调查库";
-    $("library-intro").textContent=kind === "videos" ? "每段素材独立保存问题与证据。上传后先预检，再按已批准预算分析。" : `调查保存在这台电脑的服务中，默认保留 ${session.ttl_hours} 小时。继续上次的路径，或开启新调查。`;
-    $("library-add").textContent=kind === "videos" ? "上传视频" : "新建调查";
+    $("library-title").textContent=kind === "videos" ? "Material library" : "Investigations";
+    $("library-intro").textContent=kind === "videos" ? "Each video keeps its own questions and evidence. Uploads are checked before analysis under the approved budget." : `Investigations are saved on this server for ${session.ttl_hours} hours by default. Reopen an investigation or create a new one.`;
+    $("library-add").textContent=kind === "videos" ? "Upload video" : "New investigation";
     $("library-add").onclick=()=>{
       if(kind === "videos") {$("workspace-library").close();$("file-input").click();}
       else create(currentVideo).catch(e=>libraryNotice(e.message));
@@ -497,42 +504,42 @@
     const body=$("library-items");body.replaceChildren();
     $("workspace-library").showModal();
     if (kind === "videos") {
-      body.append(item(demo.name,"18 秒 · 公开合成演示 · 预设回答",()=>openSource(demo)));
+      body.append(item(demo.name,"18 seconds · Synthetic demo · Preset answers",()=>openSource(demo)));
       const data=await api("/api/videos");
       if (!active()) return;
-      if (data.items.some(video=>video.knowledge_status?.required_for_chat)) $("library-intro").textContent="每段素材独立保存问题与证据。上传后先预检并建立基础索引，完成后可以提问。";
+      if (data.items.some(video=>video.knowledge_status?.required_for_chat)) $("library-intro").textContent="Each video keeps its own questions and evidence. After upload, preflight and indexing must finish before questions are available.";
       syncSourceSwitcher(data.items);
       for (const video of data.items) {
         const job=video.job;
-        const row=item(video.name,`${Math.round(video.bytes/1024/1024)} MB · ${sourceStatus(video)}${!video.knowledge_status?.required_for_chat && job?.total ? ` · ${job.completed}/${job.total} 窗口` : ""}`,()=>openSource(video));
+        const row=item(video.name,`${Math.round(video.bytes/1024/1024)} MB · ${sourceStatus(video)}${!video.knowledge_status?.required_for_chat && job?.total ? ` · ${job.completed}/${job.total} windows` : ""}`,()=>openSource(video));
         if (["failed","cancelled"].includes(job?.state) && !video.metadata?.windows) {
-          const retry=document.createElement("button");retry.className="outline-button";retry.textContent="重新预检";
-          retry.onclick=async()=>{try {await api(`/api/videos/${video.id}/retry`,"POST");libraryNotice("已重新开始预检。");if(currentVideo.id===video.id) watch(video.id,requestEpoch);}catch(e){libraryNotice(e.message);}};
+          const retry=document.createElement("button");retry.className="outline-button";retry.textContent="Retry preflight";
+          retry.onclick=async()=>{try {await api(`/api/videos/${video.id}/retry`,"POST");libraryNotice("Preflight restarted.");if(currentVideo.id===video.id) watch(video.id,requestEpoch);}catch(e){libraryNotice(e.message);}};
           row.append(retry);
         } else if (["awaiting_configuration","failed","cancelled"].includes(job?.state)) {
-          const analyze=document.createElement("button");analyze.className="outline-button";analyze.textContent="开始分析";
+          const analyze=document.createElement("button");analyze.className="outline-button";analyze.textContent="Start analysis";
           analyze.disabled=!session.real_ready || !video.metadata?.windows;
-          analyze.title=analyze.disabled ? "需要模型服务、有效校准记录和已批准预算" : "使用已批准预算分析完整素材";
-          analyze.onclick=async()=>{try {await api(`/api/videos/${video.id}/analyze`,"POST"); libraryNotice("已受理分析。点击刷新查看真实阶段。"); if (currentVideo.id===video.id) watch(video.id,requestEpoch);}catch(e){libraryNotice(e.message);}};
+          analyze.title=analyze.disabled ? "Requires model services, valid calibration records, and approved budget" : "Analyze full footage using approved budget";
+          analyze.onclick=async()=>{try {await api(`/api/videos/${video.id}/analyze`,"POST"); libraryNotice("Analysis started. Refresh to check progress."); if (currentVideo.id===video.id) watch(video.id,requestEpoch);}catch(e){libraryNotice(e.message);}};
           row.append(analyze);
         }
         if (["queued","probing","captioning","transcribing","indexing"].includes(job?.state)) {
-          const cancel=document.createElement("button");cancel.className="text-button";cancel.textContent="取消";
+          const cancel=document.createElement("button");cancel.className="text-button";cancel.textContent="Cancel";
           cancel.onclick=async()=>{await api(`/api/videos/${video.id}/cancel`,"POST");await library("videos");};row.append(cancel);
         }
-        const rename=document.createElement("button");rename.className="text-button";rename.textContent="重命名";
+        const rename=document.createElement("button");rename.className="text-button";rename.textContent="Rename";
         rename.onclick=()=>renameSource(video);row.append(rename);
-        const remove=document.createElement("button");remove.className="text-button danger";remove.textContent="删除";
-        remove.setAttribute("aria-label",`删除素材：${video.name}`);
+        const remove=document.createElement("button");remove.className="text-button danger";remove.textContent="Delete";
+        remove.setAttribute("aria-label",`Delete video: ${video.name}`);
         remove.onclick=()=>confirmDelete(video,"videos");row.append(remove);body.append(row);
       }
-      if (!session.real_ready && !data.items.some(video=>video.knowledge_status?.required_for_chat)) libraryNotice("真实分析等待模型地址与预算配置。上传、预检、播放和调查保存已可使用。");
+      if (!session.real_ready && !data.items.some(video=>video.knowledge_status?.required_for_chat)) libraryNotice("Analysis requires model configuration and budget approval. Upload, preflight, playback and saved investigations are available.");
     } else {
       const data=await api("/api/investigations");
       if (!active()) return;
       for (const desk of data.items) {
-        const row=item(desk.title,`${desk.video === "demo_parcel" ? "演示素材" : "真实素材"} · ${new Date(desk.updated*1000).toLocaleString()}${desk.id===current?.id ? " · 当前" : ""}`,()=>openDesk(desk.id));
-        const remove=document.createElement("button");remove.className="text-button danger";remove.textContent="删除";
+        const row=item(desk.title,`${isDemo(desk.video) ? "Synthetic demo" : "Uploaded video"} · ${new Date(desk.updated*1000).toLocaleString()}${desk.id===current?.id ? " · Current" : ""}`,()=>openDesk(desk.id));
+        const remove=document.createElement("button");remove.className="text-button danger";remove.textContent="Delete";
         remove.onclick=()=>confirmDelete(desk,"investigations");row.append(remove);body.append(row);
       }
     }
@@ -553,7 +560,7 @@
     $("rename-source-dialog").showModal();$("rename-source-input").focus();
   }
   function confirmDelete(entity,table) {
-    $("delete-description").textContent=table === "videos" ? `删除「${entity.name}」及其所有调查、证据和原文件？` : `删除调查「${entity.title}」？`;
+    $("delete-description").textContent=table === "videos" ? `Delete "${entity.name}" and all its investigations, evidence, and original video?` : `Delete investigation "${entity.title}"?`;
     $("delete-confirm").onclick=async()=>{
       const deskId=current?.id;
       const deletingCurrent=(table === "videos" && current?.video===entity.id) || deskId===entity.id;
@@ -591,22 +598,22 @@
     } finally {if (owns(deskId,epoch)) ui().busy(false);}
   }
   async function upload(file) {
-    if (!file.type.startsWith("video/") || file.size > 500*1024**2) {ui().notify("请选择不超过 500 MB 的视频文件。");return;}
+    if (!file.type.startsWith("video/") || file.size > 500*1024**2) {ui().notify("Please select a video file that is no larger than 500 MB.");return;}
     try {
       const deskId=current?.id, epoch=requestEpoch;
-      await flush();if (!owns(deskId,epoch)) return;ui().notify(`正在上传 ${file.name} · 0%`);
+      await flush();if (!owns(deskId,epoch)) return;ui().notify(`Uploading ${file.name} · 0%`);
       const result=await new Promise((resolve,reject)=>{
         const xhr=new XMLHttpRequest();xhr.open("POST","/api/videos");
         xhr.setRequestHeader("Content-Type",file.type);xhr.setRequestHeader("X-FS-CSRF",session.csrf);
         xhr.setRequestHeader("X-File-Name",encodeURIComponent(file.name));xhr.timeout=180000;
-        xhr.upload.onprogress=e=>{if(owns(deskId,epoch) && e.lengthComputable)ui().notify(`正在上传 ${file.name} · ${Math.round(e.loaded/e.total*100)}%`);};
-        xhr.onload=()=>{let data;try {data=JSON.parse(xhr.responseText);}catch{reject(new Error("上传响应无效"));return;}xhr.status===201 ? resolve(data) : reject(new Error(data.detail || "上传失败"));};
-        xhr.onerror=()=>reject(new Error("上传连接中断，原调查已保留。"));xhr.ontimeout=xhr.onerror;xhr.send(file);
+        xhr.upload.onprogress=e=>{if(owns(deskId,epoch) && e.lengthComputable)ui().notify(`Uploading ${file.name} · ${Math.round(e.loaded/e.total*100)}%`);};
+        xhr.onload=()=>{let data;try {data=JSON.parse(xhr.responseText);}catch{reject(new Error("Invalid upload response"));return;}xhr.status===201 ? resolve(data) : reject(new Error(data.detail || "Upload failed"));};
+        xhr.onerror=()=>reject(new Error("Upload interrupted. The original investigation was kept."));xhr.ontimeout=xhr.onerror;xhr.send(file);
       });
       if (!owns(deskId,epoch)) return;
       const video=await api(`/api/videos/${result.id}`);if (!owns(deskId,epoch)) return;
       if (!await create(video)) return;
-      ui().notify("上传完成，服务端正在预检素材。可在素材库查看进度。");
+      ui().notify("Upload complete. The server is checking the video; view progress in Manage videos.");
       ui().showSource();
     }catch(error){ui().notify(error.message);}
   }
@@ -624,10 +631,10 @@
       } catch(error) {
         if (!active()) return;
         if (knowledgeWatch && (error.status==null || error.status===429 || error.status>=500) && ++readFailures<=3) {
-          ui().notify('暂时无法读取索引进度，正在重新连接；不会重新处理视频。');
+          ui().notify("Temporarily unable to read indexing progress, reconnecting; video will not be reprocessed.");
           continue;
         }
-        ui().notify(knowledgeWatch ? '无法读取索引进度。请重新打开该视频查看；已完成的处理会保留。' : error.message);
+        ui().notify(knowledgeWatch ? "Unable to read indexing progress. Please reopen the video to view; completed processing will be retained." : error.message);
         return;
       }
       if (!active()) return;
@@ -636,10 +643,10 @@
         const knowledge=video.knowledge_status;
         currentVideo=video;ui().updateKnowledge?.(video);
         if (knowledge?.required_for_chat && ["queued","indexing"].includes(knowledge.state)) {
-          const label=`建立基础索引 · ${knowledge.completed_segments}/${knowledge.total_segments} 段`;
+          const label=`Building index · ${knowledge.completed_segments}/${knowledge.total_segments} segments`;
           $("video-state").textContent=label;ui().notify(label);continue;
         }
-        ui().notify(`${labels[video.job?.state] || "处理素材"}${video.job?.total ? ` · ${video.job.completed}/${video.job.total} 窗口` : ""}`);
+        ui().notify(`${labels[video.job?.state] || "Processing video"}${video.job?.total ? ` · ${video.job.completed}/${video.job.total} windows` : ""}`);
         if (["ready","failed","awaiting_configuration","cancelled"].includes(video.job?.state) && !needsWatch(video)) {
           await flush(); if (!active()) return;
           currentVideo=video; const saved=snapshot();suspended=true;
@@ -647,18 +654,18 @@
           syncSourceSwitcher();
           refreshChatBudget();
           changed();
-          if (knowledge?.required_for_chat && knowledge.state === "ready") ui().notify("基础索引完成，可以开始提问。");
-          else if (knowledge?.required_for_chat && knowledge.state === "waiting_budget") ui().notify("基础索引等待预算或授权；视频和已有回答仍可查看，已完成片段会保留。");
-          else if (knowledge?.required_for_chat && ["failed","unknown","cancelled","waiting_processor"].includes(knowledge.state)) ui().notify("基础索引尚未完成；视频和已有回答仍可查看。");
-          else if (video.job?.state === "failed") ui().notify(`预检或分析失败：${video.job.error}。素材保留，可重新处理或删除。`);
-          else if (video.job?.state === "awaiting_configuration") ui().notify("预检完成，等待模型服务与预算配置。不会发送模型请求。");
+          if (knowledge?.required_for_chat && knowledge.state === "ready") ui().notify("The basic index is complete and you can start asking questions.");
+          else if (knowledge?.required_for_chat && knowledge.state === "waiting_budget") ui().notify("Basic indexing awaits budget or authorization; videos and existing answers will still be viewable, and completed clips will be retained.");
+          else if (knowledge?.required_for_chat && ["failed","unknown","cancelled","waiting_processor"].includes(knowledge.state)) ui().notify("Basic indexing is not yet complete; videos and existing answers are still viewable.");
+          else if (video.job?.state === "failed") ui().notify(`Preflight or analysis failed:${video.job.error}. The video is retained and can be reprocessed or deleted.`);
+          else if (video.job?.state === "awaiting_configuration") ui().notify("Preflight complete. Waiting for model service and budget configuration. No model request will be sent.");
           return;
         }
       }catch(error){if (active()) ui().notify(error.message);return;}
     }
   }
   async function recover({resumeMissing=false}={}) {
-    if (!current || currentVideo.id === "demo_parcel") return;
+    if (!current || isDemo(currentVideo.id)) return;
     const deskId=current.id, epoch=requestEpoch, deskEpoch=store().getSnapshot().epoch,
       submission=submissionEpoch, initialDraft=$("question").value;
     const valid=()=>owns(deskId,epoch) && store().getSnapshot().epoch===deskEpoch && submission===submissionEpoch;
@@ -683,7 +690,7 @@
         if (!draft && initialDraft===draft && request.input) draft=request.input.question;
         if (!activeRequest) activeRequest={desk:deskId,id:request.id,state:request.state,parentRequestId:request.input?.parent_request_id};
         else if (activeRequest.desk===deskId && activeRequest.id===request.id) activeRequest.state=request.state;
-        ui().notify(request.state === "unknown" ? "先前调用结果不确定，不会自动重复调用。原问题已保留。" : "先前查询仍在执行；点击恢复查询获取结果。");
+        ui().notify(request.state === "unknown" ? "The previous request has an unknown outcome and will not be retried automatically. Your question is preserved." : "The previous query is still executing; click Resume Query to get the results.");
         $('resume-query').hidden=false;
       }
     }
@@ -701,7 +708,7 @@
         if (!activeRequest || (activeRequest.desk===deskId && activeRequest.id===supplement.id)) {
           activeRequest={desk:deskId,id:supplement.id,state:'running',kind:'supplement'};
           $('resume-query').hidden=false;$('cancel-question').hidden=false;
-          ui().notify('先前补查仍在处理；可以恢复查看或停止。原问题已保留。');
+          ui().notify("The previous catch-up review is still being processed; viewing can be resumed or stopped. The original question has been retained.");
         }
         break;
       }
@@ -710,7 +717,7 @@
           activeRequest=null;$('resume-query').hidden=true;$('cancel-question').hidden=true;
         }
         if (wasActive || (draft && supplement.input?.question===draft))
-          ui().notify('先前补查结果不确定，不会自动重发；原问题已保留。');
+          ui().notify("The result of the previous recheck is uncertain and will not be automatically reissued; the original question has been retained.");
         continue;
       }
       if (supplement.state === 'done' && activeRequest?.desk===deskId && activeRequest.id===supplement.id) {
@@ -720,12 +727,12 @@
           activeRequest?.desk===deskId && activeRequest.id===supplement.id) {
         activeRequest=null;$('resume-query').hidden=true;$('cancel-question').hidden=true;
         ui().notify(supplement.state==='waiting_budget'
-          ? '补查等待预算或授权；原问题已保留，不会自动重发。'
-          : '先前补查未完成；原问题已保留，不会自动重发。');
+          ? "The re-examination is pending budget or authorization; the original question has been retained and will not be automatically reissued."
+          : "The previous recheck was not completed; the original question has been retained and will not be automatically reissued.");
         continue;
       }
       if (supplement.state === 'done' && !supplement.input) {
-        if (wasActive) ui().notify('先前补查已完成，但缺少原问题记录；请检查已保留的草稿。');
+        if (wasActive) ui().notify("A previous recheck was completed, but the original issue record is missing; please check the retained draft.");
         continue;
       }
       if (supplement.state === 'done' && supplement.input && !activeRequest) {
@@ -733,7 +740,7 @@
         const prepared=await api('/api/auto-chat/prepare','POST',original);
         if (!valid()) return;
         if (prepared.kind!=='ready' || prepared.engine!=='index') {
-          ui().notify(prepared.message || '补查已完成，但仍无法确认答案；原问题已保留。');
+          ui().notify(prepared.message || "The recheck has been completed, but the answer cannot be confirmed; the original question has been retained.");
           continue;
         }
         const result=await api('/api/index-chat','POST',{...original,engine:'index'});
@@ -741,7 +748,7 @@
         if (result?.response && !store().getSnapshot().records.some(r=>r.query.id===result.id)) {
           const parent=store().getSnapshot().records.find(r=>r.query.id===original.parent_request_id);
           ui().answer({...result,parentTurn:parent?.id || null},original.question);added=true;
-          ui().notify('已恢复补查结果。');
+          ui().notify("The supplementary inspection results have been restored.");
         }
       }
     }
@@ -759,7 +766,7 @@
     pending.recovering=true;
     $('resume-query').hidden=false;
     ui().busy(true);
-    ui().notify('正在使用原请求恢复；不会创建新的请求。');
+    ui().notify("Restoring using original request; no new request will be created.");
     try {
       let outcome;
       try {outcome=await api(pending.endpoint,'POST',pending.body);}
@@ -771,26 +778,26 @@
       if (outcome?.kind==='query_control' && outcome.request_id===pending.id && ['pending','unknown'].includes(outcome.state)) {
         pending.state=outcome.state==='unknown' ? 'unknown' : 'running';
         $('resume-query').hidden=false;$('cancel-question').hidden=false;
-        ui().notify(outcome.suggested_action || '原请求仍在处理，请稍后恢复查看。');
-        status(pending.state==='unknown' ? '调用结果不确定' : '正在查找证据…',pending.state==='unknown' ? 'error' : '');
+        ui().notify(outcome.suggested_action || "The original request is still being processed, please check again later.");
+        status(pending.state==='unknown' ? "The call result is uncertain" : "Looking for evidence…",pending.state==='unknown' ? 'error' : '');
         return;
       }
       if (outcome?.id!==pending.id || outcome.mode!=='real' || outcome.video_id!==pending.sourceId
           || outcome.response?.schema_version!=='0.1'
           || (outcome.source_generation!==undefined && outcome.source_generation!==pending.sourceGeneration))
-        throw new Error('请求恢复响应无效');
-      if (!isEmptyCancellation(outcome) && !isQueryResult(outcome,pending)) throw new Error('请求恢复响应无效');
+        throw new Error('Invalid recovery response');
+      if (!isEmptyCancellation(outcome) && !isQueryResult(outcome,pending)) throw new Error('Invalid recovery response');
       activeRequest=null;
       $('resume-query').hidden=true;$('cancel-question').hidden=true;
       if (!isEmptyCancellation(outcome) && !store().getSnapshot().records.some(r=>r.query.id===outcome.id)) {
         ui().answer({...outcome,parentTurn:pending.parentTurn},pending.body.question);
       }
-      ui().notify(isEmptyCancellation(outcome) ? '原请求已取消，输入已保留。' : '已恢复原请求结果。');
+      ui().notify(isEmptyCancellation(outcome) ? "The original request has been canceled and the input has been retained." : "The original request result has been restored.");
       await flush();
     } catch(error) {
       if (valid()) {
         $('resume-query').hidden=false;
-        ui().notify(`原请求恢复未完成：${error.message}。输入已保留；可再次恢复同一请求。`);
+        ui().notify(`The original requested recovery is not completed:${error.message}. The input is preserved; the same request can be resumed again.`);
       }
     } finally {
       pending.recovering=false;
@@ -800,7 +807,7 @@
   async function ask(question) {
     if (suspended || !current || !sourceReady(currentVideo)) return;
     if (activeRequest?.state!=="unknown" && activeRequest) {
-      $('resume-query').hidden=false;ui().notify("查询仍在执行，请恢复当前请求，勿发起重复尝试。");return;
+      $('resume-query').hidden=false;ui().notify("The query is still being executed. Please resume the current request and do not initiate repeated attempts.");return;
     }
     const desk=current,epoch=requestEpoch,submission=++submissionEpoch;
     const context=ui().currentContext();
@@ -812,27 +819,27 @@
     ui().busy(true);
     let pending=null;
     try {
-      ui().notify("已收到问题，正在检查…");
+      ui().notify("Question received, checking...");
       await flush(); if (!owns(desk.id,epoch)) return;
       if (activeRequest) {await stopRequest();if (!owns(desk.id,epoch)) return;}
       let prepared, partialNotice='';
       if(engine==='auto') {
         prepared=await api('/api/auto-chat/prepare',"POST",body);
         if(!owns(desk.id,epoch)) return;
-        if(!['index','local','cloud','model'].includes(prepared.engine)) throw new Error('自动处理方案无效，未发送问题');
+        if(!['index','local','cloud','model'].includes(prepared.engine)) throw new Error('Invalid processing route; the question was not sent');
         engine=prepared.engine;
-        ui().notify(prepared.route_message || "已选择处理方式，正在检查…");
+        ui().notify(prepared.route_message || "Processing method selected, checking...");
       }
       if (prepared?.has_index_matches && ['budget_blocked','supplement_unknown'].includes(prepared.kind)) {
-        partialNotice=prepared.message+' 将显示已有索引结果。';
+        partialNotice=prepared.message+' Existing index results will be shown.';
         prepared={...prepared,kind:'ready'};
       }
       if(prepared?.kind==='supplement_required') {
         pending={desk:desk.id,id:body.request_id,state:'running',kind:'supplement'};activeRequest=pending;
         $('cancel-question').hidden=false;
         ui().notify(Number.isSafeInteger(prepared.estimated_new_calls)
-          ? `正在补查相关画面，最多 ${prepared.estimated_new_calls} 次云端请求…`
-          : '正在补查相关画面…');
+          ? `Relevant pictures are being checked, at most ${prepared.estimated_new_calls} Cloud requests...`
+          : "Checking the relevant pictures...");
         const started=await api('/api/knowledge-chat/supplement','POST',body);
         if(!owns(desk.id,epoch) || activeRequest!==pending)return;
         let supplement=started;
@@ -845,19 +852,19 @@
         if(supplement.state!=='done') {
           activeRequest=null;pending=null;
           const message=supplement.state==='waiting_budget'
-            ? '补查等待预算或授权；原问题已保留，不会自动重发。'
-            : '补查未完成或结果不明；原问题已保留，不会自动重发。';
+            ? 'The supplementary check needs budget approval. Your question was kept and will not be resent automatically.'
+            : 'The supplementary check did not finish or its result is unknown. Your question was kept and will not be resent automatically.';
           if (!prepared.has_index_matches || !['waiting_budget','failed','unknown'].includes(supplement.state)) {
-            ui().notify(message);status('补查未完成','error');return;
+            ui().notify(message);status("Supplementary inspection is not completed",'error');return;
           }
-          partialNotice='补查未完成或结果不明，不会自动重发；以下为已有索引结果。';
+          partialNotice='The supplementary check did not finish or is unknown. It will not be retried automatically; existing index results follow.';
           prepared={...prepared,kind:'ready'};
         } else {
           activeRequest=null;pending=null;
           prepared=await api('/api/auto-chat/prepare','POST',body);
           if(!owns(desk.id,epoch))return;
           if(prepared.kind==='supplement_required') {
-            prepared={...prepared,kind:'clarification_required',message:'已补查相关画面，但仍无法确认完整条件。原问题已保留，不会自动重复补查。'};
+            prepared={...prepared,kind:'clarification_required',message:'Relevant frames were checked, but the full conditions remain unconfirmed. Your question was kept and the check will not be repeated automatically.'};
           }
           engine=prepared.engine;
         }
@@ -875,7 +882,7 @@
       pending={desk:desk.id,id:body.request_id,state:"running",parentTurn,parentRequestId:body.parent_request_id,
         endpoint,body:{...body},sourceId:currentVideo.id,sourceGeneration:currentVideo.generation};activeRequest=pending;
       $("cancel-question").hidden=false;
-      status("正在查找证据…");
+      status("Looking for evidence…");
       let data;
       for (let i=0;i<15 || localMode || cloudMode;i++) {
         if(activeRequest!==pending)return;
@@ -885,7 +892,7 @@
         if(!owns(desk.id,epoch)) return;
         if(data.kind!=="query_control") break;
         if(localMode && data.suggested_action) ui().notify(data.suggested_action);
-        if(data.state==="unknown") {pending.state="unknown";$('resume-query').hidden=false;ui().notify(data.suggested_action);status("调用结果不确定","error");return;}
+        if(data.state==="unknown") {pending.state="unknown";$('resume-query').hidden=false;ui().notify(data.suggested_action);status("The call result is uncertain","error");return;}
         await new Promise(r=>setTimeout(r,Math.min(10000,3000+i*500)));
         if (!owns(desk.id,epoch) || activeRequest!==pending) return;
       }
@@ -893,10 +900,10 @@
         $('resume-query').hidden=true;
         if (!store().getSnapshot().records.some(r=>r.query.id===data.id)) ui().answer({...data,parentTurn},question);
         ui().notify(partialNotice);await flush();if (!owns(desk.id,epoch)) return;
-      } else {$('resume-query').hidden=false;ui().notify("查询仍在执行，保留原问题。请从当前请求恢复，勿发起重复尝试。");}
+      } else {$('resume-query').hidden=false;ui().notify("The query is still executing, leaving the original question intact. Please resume from the current request and do not initiate repeated attempts.");}
     }catch(error){if(owns(desk.id,epoch) && submission===submissionEpoch){if(activeRequest===pending && pending?.kind==='supplement'){activeRequest=null;pending=null;}else if(activeRequest===pending && pending) $('resume-query').hidden=false;ui().notify(error.message === "context_has_no_verified_anchor"
-      ? "所选问题没有有效证据，请点击「另起问题」并写出完整问题。输入已保留。"
-      : `${error.message} · 原问题已保留。`);status("查找未完成","error");}}
+      ? "The selected question does not have valid evidence, please click \"New Question\" and write a complete question. Input reserved."
+      : `${error.message} · The original question has been retained.`);status("Find not completed","error");}}
     finally {if(owns(desk.id,epoch) && submission===submissionEpoch && (!activeRequest || activeRequest===pending)) {$("cancel-question").hidden=true;ui().busy(false);refreshChatBudget();}}
   }
   async function cancelCurrent() {
@@ -916,19 +923,19 @@
       const failed=['failed','waiting_budget'].includes(outcome?.state);
       if (completed && pending.kind==='supplement') {
         ui().busy(true);
-        ui().notify("补查在停止前已完成，正在恢复结果…");
+        ui().notify("The recheck was completed before stopping, results are being restored...");
         try { await recover(); }
-        catch { if (owns(desk,epoch)) ui().notify("补查已完成，但恢复失败；重新打开调查可再查看。输入已保留。"); }
+        catch { if (owns(desk,epoch)) ui().notify("The supplementary investigation has been completed, but the recovery failed; reopen the investigation to view it again. Input reserved."); }
         finally { if (owns(desk,epoch) && cancelledSubmission===submissionEpoch) ui().busy(false); }
         return;
       }
       ui().busy(false);
-      ui().notify(completed && pending.kind!=='supplement' ? "查找已结束，已有结果和输入已保留。"
-        : unknown ? "补查结果不确定，不会自动重发；输入已保留。"
-        : failed ? "补查在停止前未完成；输入已保留，不会自动重发。"
-        : "已停止本轮处理，输入已保留。可以修改后重新发送。");
-      status(completed ? (pending.kind==='supplement' ? "补查已完成" : "查找已结束") : unknown ? "结果不确定" : failed ? "补查未完成" : "已停止处理");await flush();
-    }catch(error){if(owns(desk,epoch) && operationSubmission===submissionEpoch)ui().notify("停止未完成："+error.message+"；输入已保留，可再次点击停止。");}
+      ui().notify(completed && pending.kind!=='supplement' ? "The search has ended with results and input retained."
+        : unknown ? "The recheck result is uncertain and will not be automatically resent; the input has been reserved."
+        : failed ? "The catch-up check was not completed before stopping; the input has been retained and will not be automatically resent."
+        : "This round of processing has been stopped and the input has been retained. You can modify it and resend it.");
+      status(completed ? (pending.kind==='supplement' ? "Supplementary inspection completed" : "Search ended") : unknown ? "The result is uncertain" : failed ? "Supplementary inspection is not completed" : "Processing has stopped");await flush();
+    }catch(error){if(owns(desk,epoch) && operationSubmission===submissionEpoch)ui().notify("Stop incomplete:"+error.message+";The input has been reserved and can be clicked again to stop.");}
     finally{if(cancellation===cancelEpoch)control.disabled=false;}
   }
   function isQueryResult(outcome,pending) {
@@ -972,6 +979,10 @@
       suspended=false;
       if(id && desks.some(d=>d.id===id))await openDesk(id);
       else if(desks.length)await openDesk(desks[0].id);else await create(demo);
+      if(/(?:^|[?&])demo=basketball(?:&|$)/.test(window.location?.search || '')) {
+        if(currentVideo.id!==demo.id) await openSource(demo);
+        window.requestAnimationFrame?.(() => document.querySelector?.('.reading-demo-examples button')?.focus());
+      }
       store().subscribe(changed);
       window.addEventListener("frameseek-canvas-changed",changed);
       window.addEventListener("frameseek-explicit-seek",changed);
@@ -986,9 +997,9 @@
           const status=await api(`/api/videos/${video.id}/knowledge/${cancelling?'cancel':'build'}`,'POST');
           if(!owns(deskId,epoch))return;
           currentVideo={...video,knowledge_status:status};ui().updateKnowledge?.(currentVideo);
-          ui().notify(cancelling?'已停止索引，已完成片段保留。':'正在建立基础索引；视频仍可播放。');
+          ui().notify(cancelling?"Indexing stopped, fragment retention completed.":"Base indexing in progress; video still playable.");
           if(!cancelling)watch(video.id,epoch);
-        } catch(error) {if(owns(deskId,epoch))ui().notify(`${error.message} · 视频与记录已保留。`);}
+        } catch(error) {if(owns(deskId,epoch))ui().notify(`${error.message} · Video and records have been retained.`);}
         finally {if(owns(deskId,epoch))control.disabled=false;}
       };
       document.addEventListener("visibilitychange",()=>{if(document.hidden)flush().catch(()=>{});});
@@ -1005,13 +1016,20 @@
       $("cancel-question").onclick=()=>cancelCurrent();
       $("resume-query").onclick=()=>recover({resumeMissing:true}).catch(e=>ui().notify(e.message));
       $("source-switcher").onchange=switchSelectedSource;
-      refreshSourceSwitcher().catch(error=>ui().notify(`视频列表读取失败：${error.message}。可在管理视频中重试。`));
+      refreshSourceSwitcher().catch(error=>ui().notify(`Failed to read video list:${error.message}. You can try again in the management video.`));
       $("close-library").onclick=()=>$("workspace-library").close();
       $("delete-cancel").onclick=()=>$("delete-dialog").close();
-    }catch(error){suspended=true;status("调查服务暂不可用","error");ui().notify(error.message);}
+      document.body?.removeAttribute("data-workspace-startup");
+    }catch(error){suspended=true;status("Investigation service unavailable","error");ui().notify(error.message);document.body?.setAttribute("data-workspace-startup","error");}
   }
-  window.FrameSeekPersistence={flush,upload,ask,library,searchIndex:searchSavedFrames,canSearchOcr,openDemo:()=>openSource(demo).catch(e=>ui().notify(e.message)),
+  window.FrameSeekPersistence={flush,upload,ask,library,searchIndex:searchSavedFrames,canSearchOcr,openDemo:()=>openSource(demo).then(opened=>{
+    if(opened) window.requestAnimationFrame?.(() => (document.querySelector?.('.reading-demo-examples button') || $('question')).focus());
+    return opened;
+  }).catch(e=>ui().notify(e.message)),
     newInvestigation:()=>create(currentVideo).catch(e=>ui().notify(e.message))};
+  const startupRetry=$("startup-retry");
+  if(startupRetry)startupRetry.onclick=()=>window.location.reload();
+  window.addEventListener("frameseek-catalog-error",()=>document.body?.setAttribute("data-workspace-startup","error"),{once:true});
   window.addEventListener("frameseek-catalog-ready",start,{once:true});
   if(ui()?.ready())start();
 })();

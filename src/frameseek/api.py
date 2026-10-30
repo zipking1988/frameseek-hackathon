@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from frameseek import __version__
 from frameseek.agent import load_runtime
 from frameseek.config import Settings, load_settings
-from frameseek.demo import catalog
+from frameseek.demo import DEMO_IDS, catalog
 from frameseek.gateway import gateway_token, https_origin
 from frameseek.preflight import report
 from frameseek.routes import register
@@ -81,6 +81,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         StaticFiles(directory=static / "demo" / "frames"),
         name="demo-frames",
     )
+    app.mount(
+        "/media/demo_basketball/frames",
+        StaticFiles(directory=static / "basketball_demo" / "frames"),
+        name="basketball-demo-frames",
+    )
 
     register(app, settings, Path(os.environ.get("FS_DATA_DIR", ".frameseek-data")), runtime)
 
@@ -93,12 +98,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return FileResponse(static / "index.html")
 
     @app.get("/demo/catalog")
-    def demo_catalog():
-        return catalog()
+    def demo_catalog(video_id: str = "demo_parcel"):
+        if video_id not in DEMO_IDS:
+            raise HTTPException(404, "unknown_demo")
+        return catalog(video_id)
 
     @app.get("/demo/video")
-    def demo_video():
-        return FileResponse(static / "demo" / "parcel.mp4", media_type="video/mp4")
+    def demo_video(video_id: str = "demo_parcel"):
+        if video_id not in DEMO_IDS:
+            raise HTTPException(404, "unknown_demo")
+        path = (
+            static / "basketball_demo" / "basketball.mp4"
+            if video_id == "demo_basketball"
+            else static / "demo" / "parcel.mp4"
+        )
+        return FileResponse(path, media_type="video/mp4")
 
     @app.get("/health")
     def health():

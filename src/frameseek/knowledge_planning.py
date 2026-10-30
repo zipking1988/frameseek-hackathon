@@ -41,7 +41,7 @@ def plan_supplement(index, question, version, *, max_windows=2):
             **common,
             "kind": "clarification_required",
             "windows": [],
-            "problems": ["指定的视频时间范围无效。"],
+            "problems": ["The requested video time range is invalid."],
         }
     query = remove_time_range(question) if scope else question
     terms, problems = interpret(query)

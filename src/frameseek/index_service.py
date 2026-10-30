@@ -52,7 +52,7 @@ def search_source(
     except AgentError:
         return {
             "kind": "clarification_required",
-            "message": "指定的视频时间范围无效。",
+            "message": "The requested video time range is invalid.",
             "available_conditions": [],
             "model_requests_sent": 0,
         }
@@ -71,7 +71,8 @@ def search_source(
             if time_window:
                 return {
                     "kind": "clarification_required",
-                    "message": "当前事件统计不支持指定时间范围；不会推断未观察的事件。",
+                    "message": "Event statistics do not support a time "
+                    "range; unobserved events are not inferred.",
                     "available_conditions": [],
                     "model_requests_sent": 0,
                 }
@@ -116,8 +117,9 @@ def search_source(
             return {
                 "kind": "clarification_required",
                 "message": (
-                    "这段视频尚无逐次事件观察；已有抽帧描述不能用来统计命中、总次数或排名。"
-                    "原问题已保留，未调用模型。"
+                    "This video has no individual event observations. Sampled descriptions cannot "
+                    "establish scores, totals or rankings. Your "
+                    "question was kept; no model was called."
                 ),
                 "available_conditions": [],
                 "model_requests_sent": 0,
@@ -125,7 +127,8 @@ def search_source(
         if conditions:
             return {
                 "kind": "clarification_required",
-                "message": "当前只有画面描述，没有可用于同一物体筛选的观察索引。",
+                "message": "Only frame descriptions are available; there "
+                "is no same-object observation index.",
                 "available_conditions": [],
                 "model_requests_sent": 0,
             }
@@ -133,7 +136,8 @@ def search_source(
         if problems or not terms:
             return {
                 "kind": "clarification_required",
-                "message": " ".join(problems) or "请写出要找的物体和可见条件。",
+                "message": " ".join(problems)
+                or "Specify the object and visible conditions to find.",
                 "available_conditions": [],
                 "model_requests_sent": 0,
             }
@@ -210,14 +214,21 @@ def chat_answer(result):
                     "end": end,
                     "start_hms": hms(start),
                     "end_hms": hms(end),
-                    "action": result.get("aggregation", {}).get("action", "已有观察匹配"),
+                    "action": result.get("aggregation", {}).get(
+                        "action", "Matching saved observation"
+                    ),
                     "summary": (
-                        "已有事件观察的连续证据片段；同一已确认事件的回放只计一次。"
+                        "Evidence from a saved event observation; "
+                        "replays of the same confirmed event count "
+                        "once."
                         if result.get("aggregation")
                         else (
-                            "索引记录的同一画面主体匹配全部检索条件；不推断跨镜头身份。"
+                            "A subject in the saved frame matches all "
+                            "search conditions; identity across shots is "
+                            "not inferred. "
                             + (
-                                "首帧在所选时段开始前呈现，并持续到时段内。"
+                                "The first frame appears before the selected "
+                                "range and continues into it."
                                 if start < hit["start"]
                                 else ""
                             )
@@ -231,9 +242,11 @@ def chat_answer(result):
                             "t_hms": hms(e["t"]),
                             "uri": e["uri"],
                             "caption": (
-                                "已有事件观察的原视频画面；本轮未新增模型复核。"
+                                "Source frame from a saved event observation; no new model review."
                                 if result.get("aggregation")
-                                else "索引记录匹配条件；识别结果尚未验证，请回看原画面。"
+                                else "The index matches the conditions; "
+                                "recognition is unverified. Review the source "
+                                "frame."
                             ),
                             "asr": None,
                         }
@@ -244,75 +257,95 @@ def chat_answer(result):
         total = result["total_occurrences"]
         text = (
             (
-                f"在已有观察索引中找到{total}个匹配的抽样画面时点；这不是人数或事件次数。"
+                f"Found {total} matching sampled frame times; "
+                "this is not a count of people or events."
                 if coverage.get("catalog_complete") is False and not result.get("aggregation")
-                else f"在已有观察索引中找到{total}个出现区间/时点。"
+                else f"Found {total} intervals or times in the saved observation index."
             )
             if total
-            else "已有观察索引中没有满足全部条件的匹配。"
+            else "No saved observations match all conditions."
         )
         if total and "有没有" in result.get("question", "") and not result.get("aggregation"):
-            text = "索引中观察到有匹配。" + text
+            text = "The index contains a match. " + text
         if events and not result.get("aggregation"):
             # Quote actual frame timestamps, not the edges of an inferred span.
             times = list(dict.fromkeys(e["t_hms"] for event in events for e in event["evidence"]))
             if times:
                 label = (
-                    "部分引用画面时间"
+                    "Some cited frame times"
                     if len(times) > 3 or result.get("next_offset")
-                    else "引用画面时间"
+                    else "Cited frame times"
                 )
-                text += f" {label}：{'、'.join(times[:3])}。"
+                text += f" {label}: {', '.join(times[:3])}."
         if not coverage["exhaustive_under_index"]:
-            text += " 视频存在未检查或不确定范围，不能据此断言全部出现时间或全片不存在。"
+            text += " Unchecked or uncertain ranges prevent a claim of all appearances or absence."
         else:
-            text += " 已遍历当前索引的全部源帧；识别准确性仍取决于原观察，未进行新的视觉复核。"
+            text += (
+                " All indexed source frames were searched; "
+                "accuracy depends on the original "
+                "observations. No new visual review was "
+                "performed."
+            )
         if events and coverage.get("recognition_accuracy_verified") is not True:
-            text += " 识别结果尚未验证，请回看引用画面。"
+            text += " Recognition is unverified; review the cited frames."
         if any(
             condition.get("value") in {"male", "female"}
             for condition in result.get("conditions", [])
         ):
-            text += " 性别相关标签来自已有观察，未核实本人身份或性别认同。"
+            text += (
+                " Gender-related labels come from saved "
+                "observations; identity and gender identity "
+                "are unverified."
+            )
     else:
         total = result["total_candidates"]
         text = (
-            f"已有描述中找到{total}张同时包含检索概念的候选画面。"
-            "当前视频缺少完整物体观察索引，尚不能给出整段视频的全部出现区间。"
-            "请打开索引时间线回看候选。"
+            f"Found {total} candidate frames whose saved descriptions contain the search concepts. "
+            "The video lacks a complete object "
+            "observation index, so all appearances cannot "
+            "be listed. "
+            "Open the index timeline to review candidates."
         )
     if stats := result.get("aggregation"):
         scope = (
-            "当前完整事件索引内"
+            "In the current complete event index"
             if stats["exact_under_index"]
-            else "已有事件观察中（覆盖或去重不完整）"
+            else "In saved event observations (coverage or deduplication incomplete)"
         )
         text = (
-            f"{scope}，{stats.get('label', stats['action'])}归并为{stats['unique_events']}组事件，"
-            f"附{stats['evidence_clips']}段画面。"
+            f"{scope}, {stats.get('label', stats['action'])} is grouped into "
+            f"{stats['unique_events']} "
+            f"events with {stats['evidence_clips']} evidence clips."
         )
         if stats["repeated_clips"]:
-            text += f"其中{stats['repeated_clips']}段由同一事件标识关联的重复/回放不重复计数。"
+            text += f" {stats['repeated_clips']} repeated or replay clips are not counted twice."
         if stats["mode"] == "ranking":
             text += (
-                " 已有实体标识的统计："
+                " Counts for saved entity identifiers: "
                 + (
-                    "；".join(f"{row['entity']}：{row['events']}组" for row in stats["ranking"])
-                    or "暂无"
+                    "; ".join(
+                        f"{row['entity']}: {row['events']} groups" for row in stats["ranking"]
+                    )
+                    or "none"
                 )
-                + "。"
+                + "."
             )
             if not stats["ranking_complete"]:
                 text += (
-                    f"另有{stats['unknown_actors']}组未绑定实体，"
-                    "或事件覆盖不完整，不能确认全片第一名。"
+                    f" {stats['unknown_actors']} groups lack an entity or event coverage is "
+                    "incomplete, so a whole-video leader cannot be confirmed."
                 )
         if not stats["exact_under_index"]:
-            text += " 这些是当前观察的分组数，缺口两侧可能属于同一事件，不能当作整段视频总数。"
-        text += " 事件语义和实体关联来自已有提取记录，本轮没有重新识别原视频。"
+            text += (
+                " These are observed groups, not whole-video totals; gaps may split the same event."
+            )
+        text += (
+            " Event semantics and entity links come from "
+            "saved records; the video was not re-analyzed."
+        )
     if result.get("next_offset") is not None:
-        text += " 当前回答只展示第一页；索引时间线可继续加载全部结果。"
-    text += " 本次模型调用0次。"
+        text += " This answer shows the first page; load more in the index timeline."
+    text += " No model calls in this turn."
     return Answer.model_validate(
         {
             "schema_version": "0.1",
@@ -320,7 +353,10 @@ def chat_answer(result):
             "timebase": "video_absolute_seconds",
             "answer": text,
             "events": events,
-            "unresolved": ["基于已有观察；请检查索引时间线中的覆盖信息与未检查范围。"]
+            "unresolved": [
+                "Based on saved observations; review coverage "
+                "and unchecked ranges in the index timeline."
+            ]
             if events
             else [],
             "followups": [],

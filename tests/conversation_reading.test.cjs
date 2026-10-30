@@ -17,8 +17,8 @@ const query = () => ({mode:'real',engine:'local',video_id:'video-A',question:'�
 ]}]}});
 test('reading presentation distinguishes estimate, event count and evidence without mutating the answer',()=>{
   const q=query(),before=JSON.stringify(q),view=conversationAnswer(q);
-  assert.equal(view.text,'1个');assert.match(view.prefix,/估计/);assert.match(view.caution,/尚未核实/);
-  assert.match(view.evidenceNote,/不代表事件发生次数/);assert.deepEqual(view.frames.map(f=>f.t),[101,102]);
+  assert.equal(view.text,'1个');assert.match(view.prefix,/estimate/);assert.match(view.caution,/not verified/);
+  assert.match(view.evidenceNote,/not the number of events/);assert.deepEqual(view.frames.map(f=>f.t),[101,102]);
   assert.equal(JSON.stringify(q),before);
 });
 test('reading view preserves all references while excluding foreign or invalid images',()=>{
@@ -31,7 +31,7 @@ test('reading view preserves all references while excluding foreign or invalid i
 });
 test('synthetic box answers retain explicit fixture provenance and their real demo frame links',()=>{
   const q={question:'箱子在哪里？',response:{status:'ok',answer:'中央。',unresolved:[],events:[{video_id:'demo_parcel',evidence:[{frame_id:'f',t:6,uri:'/media/demo_parcel/frames/6.jpg'}]}]}};
-  const view=conversationAnswer(q);assert.match(view.label,/预设回答/);assert.equal(view.prefix,'');assert.equal(view.frames.length,1);
+  const view=conversationAnswer(q);assert.match(view.label,/preset answer/);assert.equal(view.prefix,'');assert.equal(view.frames.length,1);
 });
 test('English preset translation is limited to the exact synthetic example',()=>{
   const q={id:'center',question:'When is the parcel in the center?',response:{status:'ok',answer:'包裹在 00:05–00:11 出现在工作台中央。',unresolved:[],events:[{video_id:'demo_parcel',evidence:[{frame_id:'f',t:6,uri:'/media/demo_parcel/frames/6.jpg'}]}]}};
@@ -106,7 +106,7 @@ test('actual canvas handlers leave conversation wheel and summary clicks to the 
 
 test('reading scoreboard time questions are not mislabeled as whole-video event counts',()=>{
   const q=query();q.question='第四节比赛时间还剩多少秒？';q.response.answer='16.3秒';
-  const view=conversationAnswer(q);assert.equal(view.prefix,'');assert.equal(view.caution,'');assert.match(view.evidenceNote,/回看原视频/);
+  const view=conversationAnswer(q);assert.equal(view.prefix,'');assert.equal(view.caution,'');assert.match(view.evidenceNote,/replay the source video/);
 });
 
 test('canvas composer entry opens conversation without submitting or changing a draft',()=>{
@@ -140,7 +140,7 @@ test('reply quotes distinguish duplicate questions using the actual context ID, 
   const second=query();second.id='q-second';second.response.answer='无法确定';
   const records=[{id:'task-24',query:first},{id:'task-25',query:second}];
   const before=JSON.stringify(records);
-  assert.deepEqual(replyQuote(records,second),{heading:'引用问题 25 的回答',question:second.question,answer:'无法确定'});
+  assert.deepEqual(replyQuote(records,second),{heading:'Replying to answer 25',question:second.question,answer:'无法确定'});
   assert.equal(replyQuote(records,null),null);
   assert.equal(replyQuote(records,{...second,video_id:'foreign'}),null);
   assert.equal(replyQuote([{...records[1],hidden:true}],second),null);
@@ -152,7 +152,13 @@ test('reply quote uses the selected turn when fixture questions reuse an ID',()=
   const first=query();first.id='center';first.question='same';
   const second={...first,response:{...first.response,answer:'second answer'}};
   const records=[{id:'task-1',query:first},{id:'task-2',query:second}];
-  assert.equal(replyQuote(records,second,'task-2').heading,'引用问题 2 的回答');
+  assert.equal(replyQuote(records,second,'task-2').heading,'Replying to answer 2');
   assert.equal(replyQuote(records,second,'task-2').answer,'second answer');
   assert.equal(replyQuote(records,second,'task-unknown'),null);
+});
+
+test('English forklift demo translates only the exact labeled no-result preset', () => {
+  const q={id:'forklift',question:'Is there a forklift?',response:{status:'no_result',answer:'这段 18 秒演示画面中没有叉车。',unresolved:[],events:[]}};
+  assert.equal(conversationAnswer(q).text,'There is no forklift in this 18-second synthetic demo.');
+  assert.equal(conversationAnswer({...q,mode:'real',video_id:'video'}).text,q.response.answer);
 });

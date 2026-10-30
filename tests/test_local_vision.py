@@ -292,14 +292,14 @@ def test_actual_local_pipeline_shape_cache_and_reference_validation(tmp_path, mo
         tmp_path, source, "mixed references", None, lambda _: None, lambda: True
     )
     assert len(partial["events"]) == 1 and partial["status"] == "partial"
-    assert "已排除1条" in partial["unresolved"][1]
+    assert "Excluded 1 invalid frame" in partial["unresolved"][1]
 
     local._CLIENT.infer = lambda *a, **k: {"text": '{"matches": []}'}
     missing = local.answer_source(
         tmp_path, source, "missing target", None, lambda _: None, lambda: True
     )
     assert missing["status"] == "no_result" and missing["events"] == []
-    assert "不能证明原视频中绝对不存在" in missing["answer"]
+    assert "cannot establish absence from the video" in missing["answer"]
 
     def failed_editor(*args, **kwargs):
         if "caption" in kwargs["schema"]["properties"]:
@@ -409,7 +409,7 @@ def test_answer_editor_keeps_appearance_questions_separate_from_counting(tmp_pat
     appearance_answer = edit_grounded_answer(
         Editor(), tmp_path, "test-id", "找出戴红色帽子的人出现的时间", copy.deepcopy(events)
     )
-    assert "1组画面" in appearance_answer and "1张引用" in appearance_answer
+    assert "1 matching group" in appearance_answer and "1 cited frame" in appearance_answer
     assert "test-only" not in appearance_answer, (
         "appearance text uses actual matches, not free-form claims"
     )

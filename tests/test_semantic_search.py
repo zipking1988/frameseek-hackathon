@@ -445,7 +445,7 @@ def test_garment_color_consumption_cannot_drop_the_color_of_a_held_object():
     )
     conditions, problems = resolve_conditions(index, "找出戴红色帽子拿着红色篮球的人")
     assert problems  # Red headwear cannot prove that the held basketball is red.
-    assert not conditions or any("物体" in problem for problem in problems)
+    assert not conditions or any("object" in problem for problem in problems)
     _, problems = resolve_conditions(
         index, "find a person wearing a red hat holding a red basketball"
     )
@@ -960,7 +960,7 @@ def test_legacy_bilingual_candidates_stay_unverified_and_require_all_conditions(
         assert result["frames"][0]["frame_id"] == "vid_fixture_f0"
         assert result["verified_matches"] is False
         assert not chat_answer(result)["events"]
-        assert "缺少完整物体观察索引" in chat_answer(result)["answer"]
+        assert "lacks a complete object observation index" in chat_answer(result)["answer"]
 
 
 def test_aggregate_questions_do_not_become_false_zero_occurrence_answers(tmp_path):
@@ -970,4 +970,4 @@ def test_aggregate_questions_do_not_become_false_zero_occurrence_answers(tmp_pat
     result = search_source(tmp_path, source, "谁投的3分最多？")
     assert result["kind"] == "clarification_required"
     assert result["model_requests_sent"] == 0
-    assert "总次数或排名" in result["message"]
+    assert "totals or rankings" in result["message"]

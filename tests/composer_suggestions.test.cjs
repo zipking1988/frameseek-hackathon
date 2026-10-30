@@ -5,7 +5,7 @@ const record=(extra={})=>({id:'task-1',query:{id:'q1',mode:'real',video_id:'bask
 const state=(rec=record())=>({sourceInfo:{id:'basketball',metadata:{duration:384}},selectedId:'task-1',records:[rec]});
 test('cached model followups retain priority with the original source-frame provenance',()=>{
  const result=composerSuggestions(state());
- assert.equal(result.label,'已有回答建议');assert.deepEqual(result.items,['A?','B?','C?']);
+ assert.equal(result.label,'Suggested follow-ups');assert.deepEqual(result.items,['A?','B?','C?']);
  assert.equal(result.basis.t,326.1);assert.equal(result.basis.queryId,'q1');
 });
 test('wrong-video, hidden, failed and evidence-free answers never supply grounded suggestions',()=>{
@@ -13,28 +13,28 @@ test('wrong-video, hidden, failed and evidence-free answers never supply grounde
  const failed=record();failed.query.response.status='error';
  const empty=record();empty.query.response.events=[];
  for(const r of [wrong,failed,empty,record({hidden:true})]){
-  const result=composerSuggestions(state(r));assert.match(result.label,/示例问题/);assert.equal(result.basis,undefined);
+  const result=composerSuggestions(state(r));assert.match(result.label,/Example questions/);assert.equal(result.basis,undefined);
  }
 });
 test('box suggestions stay synthetic and cannot reuse basketball evidence',()=>{
- const s=state();s.sourceInfo={id:'demo_parcel'};assert.equal(composerSuggestions(s).label,'演示示例');
+ const s=state();s.sourceInfo={id:'demo_parcel'};assert.equal(composerSuggestions(s).label,'Demo questions');
  const r=record();r.query.mode='fixture';r.query.response.events=[{video_id:'demo_parcel',evidence:[{t:6,uri:'/media/demo_parcel/frames/6.jpg'}]}];
- assert.equal(composerSuggestions({sourceInfo:{id:'demo_parcel'},selectedId:'task-1',records:[r]}).label,'演示追问');
+ assert.equal(composerSuggestions({sourceInfo:{id:'demo_parcel'},selectedId:'task-1',records:[r]}).label,'Demo follow-ups');
 });
 test('basketball questions use saved scoreboard/clock observations and bounded real source timestamps',()=>{
  const r=record();r.query.response.followups=[];r.query.response.answer='记分牌上显示第四节比赛时间还剩16.3秒。';
  const result=composerSuggestions(state(r));
- assert.deepEqual(result.titles,['核对记分牌','读取比赛计时','回看前后变化']);
- assert.equal(result.label,'基于已有证据');assert.equal(result.basis.t,326.1);
- assert.ok(result.items.every(q=>q.startsWith('请查看视频05:20至05:33，')));
+ assert.deepEqual(result.titles,['Check the scoreboard','Read the game clock','Review what changed']);
+ assert.equal(result.label,'Based on saved evidence');assert.equal(result.basis.t,326.1);
+ assert.ok(result.items.every(q=>q.startsWith('Review the video from 05:20 to 05:33: ')));
  assert.ok(result.items.every(q=>!q.includes('16.3')));
 });
 test('real box evidence generates object questions even if its filename misleadingly says basketball',()=>{
  const r=record();r.query.response.followups=[];r.query.video_id='box';r.query.response.answer='纸箱位于工作台中央。';
  r.query.response.events=[{video_id:'box',evidence:[{t:1,uri:'/media/box/frames/one.jpg',caption:'纸箱位于工作台中央'}]}];
  const result=composerSuggestions({sourceInfo:{id:'box',name:'basketball.mp4',metadata:{duration:5}},records:[r]});
- assert.deepEqual(result.titles,['箱子有没有移动？','箱子周围有什么？','回看前后变化']);
- assert.ok(result.items.every(q=>q.startsWith('请查看视频00:00至00:05，')));
+ assert.deepEqual(result.titles,['Did the box move?','What is near the box?','Review what changed']);
+ assert.ok(result.items.every(q=>q.startsWith('Review the video from 00:00 to 00:05: ')));
 });
 test('deselecting still uses the latest valid visible evidence; hiding it removes its recommendations',()=>{
  const r=record();r.query.response.followups=[];
@@ -50,7 +50,7 @@ test('nonfinite/out-of-duration frames, foreign event IDs and external media nev
 });
 test('cached followups from a previous good answer include a time window when no context is selected',()=>{
  const result=composerSuggestions({...state(),selectedId:null});
- assert.ok(result.items[0].startsWith('请查看视频05:20至05:33，'));
+ assert.ok(result.items[0].startsWith('Review the video from 05:20 to 05:33: '));
 });
 
 
@@ -71,8 +71,8 @@ test('portable reports retain the numeric-review caution without changing the mo
  const original=JSON.stringify(r.query.response);
  const output=report.create({...state(r),pins:[]});
  assert.equal(output.questions[0].review_notes.length,1);
- assert.match(report.markdown(output),/文本复核/);
- assert.match(report.html(output),/文本复核/);
+ assert.match(report.markdown(output),/Text review/);
+ assert.match(report.html(output),/Text review/);
  assert.equal(JSON.stringify(r.query.response),original);
  assert.equal(output.questions[0].response.answer,'右侧数字从14递减至23。');
 });

@@ -73,8 +73,8 @@ async def test_one_remaining_call_short_window_has_no_text_rewrite_or_retry(
         elif mode == "negative":
             assert response["status"] == "no_result"
             assert response["events"] == []
-            assert "抽样画面" in response["answer"]
-            assert "不能据此断言整段视频" in response["answer"]
+            assert "sampled frames" in response["answer"]
+            assert "cannot establish absence from the full video" in response["answer"]
         else:
             assert response["status"] == "error"
             assert response["events"] == []

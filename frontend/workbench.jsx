@@ -10,16 +10,17 @@ import { createRoot } from "react-dom/client";
 const store = window.FrameSeekWorkbenchModel.createStore();
 window.FrameSeekWorkbench = store;
 const clock = window.FrameSeekWorkbenchModel.clock;
+const displayText = window.FrameSeekWorkbenchModel.displayText;
 const useDesk = () => useSyncExternalStore(store.subscribe, store.getSnapshot);
 const ui = () => window.FrameSeekUI;
 const icon = (name) => (
   <img className="icon" src={`/static/icons/${name}.svg`} alt="" />
 );
 const labels = {
-  ok: "画面可确认",
-  partial: "仍有未确认项",
-  no_result: "未找到画面",
-  error: "未完成",
+  ok: "Evidence found",
+  partial: "Partially confirmed",
+  no_result: "No matching frames",
+  error: "Incomplete",
 };
 
 // Synchronize the persistent header controls without remounting their listeners.
@@ -81,7 +82,7 @@ function WorkspaceView() {
   });
   useEffect(() => {
     document.querySelector(".agent-shell").classList.toggle("conversation-mode", mode === "conversation");
-    document.getElementById("chat-content").setAttribute("aria-label", mode === "conversation" ? "视频对话" : "调查画布");
+    document.getElementById("chat-content").setAttribute("aria-label", mode === "conversation" ? "Video conversation" : "Investigation canvas");
     document.getElementById("chat-content").dataset.readingMode = String(mode === "conversation");
     try { localStorage.setItem("frameseek-reading-view", mode); } catch {}
     document.getElementById("reading-tools").open = mode === "canvas";
@@ -103,9 +104,9 @@ function WorkspaceView() {
       form.removeEventListener("focusin", enterConversation);
     };
   }, []);
-  return <div className="reading-tabs" role="group" aria-label="工作区视图">
-    <button type="button" aria-pressed={mode === "conversation"} onClick={() => setMode("conversation")}>对话</button>
-    <button type="button" aria-pressed={mode === "canvas"} onClick={() => setMode("canvas")}>画布</button>
+  return <div className="reading-tabs" role="group" aria-label="Workspace view">
+    <button type="button" aria-pressed={mode === "conversation"} onClick={() => setMode("conversation")}>Conversation</button>
+    <button type="button" aria-pressed={mode === "canvas"} onClick={() => setMode("canvas")}>Canvas</button>
   </div>;
 }
 function ConversationContext() {
@@ -126,15 +127,15 @@ function ConversationContext() {
   useEffect(() => {
     document.getElementById("conversation-context-chip").hidden = !context;
     const input = document.getElementById("question");
-    if (!input.disabled) input.placeholder = context?.englishDemo ? "Ask a follow-up…" : context ? "针对这条回答继续提问…" : "向这个视频提问…";
+    if (!input.disabled) input.placeholder = context ? "Ask a follow-up…" : "Ask a question about this video…";
   }, [context?.heading, context?.answer, state.sourceInfo?.id]);
   return context ? <div className="reading-context-chip" role="group" aria-label={context.heading}>
     <div className="reading-quote-copy">
       <strong>{context.heading}</strong>
       <p className="reading-quote-question" title={context.question}>{context.question}</p>
-      <p className="reading-quote-answer" title={context.answer}>{context.englishDemo ? "Answer: " : "回答："}{context.answer}</p>
+      <p className="reading-quote-answer" title={context.answer}>Answer: {context.answer}</p>
     </div>
-    <button type="button" aria-label={context.englishDemo ? "Remove reference, keep draft" : "取消引用，保留草稿"} onClick={() => document.getElementById("clear-context").click()}>{context.englishDemo ? "Remove reference" : "取消引用"}</button>
+    <button type="button" aria-label="Remove reference, keep draft" onClick={() => document.getElementById("clear-context").click()}>Remove reference</button>
   </div> : null;
 }
 const ConversationTurn = memo(function ConversationTurn({record, selected, ocrAvailable}) {
@@ -144,39 +145,43 @@ const ConversationTurn = memo(function ConversationTurn({record, selected, ocrAv
   const presentation = window.FrameSeekWorkbenchModel.conversationAnswer(query);
   const frames = expanded ? presentation.frames : presentation.frames.slice(0,2);
   const replay = frame => { ui()?.seek(frame.t, query); };
-  return <article id={`conversation-${record.id}`} className={`conversation-turn${selected ? " is-selected" : ""}`} aria-label={`问题与回答：${query.question}`}>
-    <div className="reading-question">{icon("chats-circle")}<p>{query.question}</p></div>
+  return <article id={`conversation-${record.id}`} className={`conversation-turn${selected ? " is-selected" : ""}`} aria-label={`Question and answer: ${displayText(query.question, query)}`}>
+    <div className="reading-question">{icon("chats-circle")}<p>{displayText(query.question, query)}</p></div>
     <div className="reading-answer">
       <span className="reading-mark">{icon("chats-circle")}</span>
       <span className="reading-speaker">FrameSeek <span>{presentation.label}</span></span>
       <p className="reading-answer-text">{presentation.prefix}{presentation.text}</p>
       {presentation.caution && <p className="reading-caution">{presentation.caution}</p>}
       {!!frames.length && <div className="reading-evidence-grid">{frames.map(frame => <button className="reading-evidence" type="button" key={frame.frame_id || frame.uri}
-        aria-label={`${presentation.englishDemo ? "Replay evidence" : "回看证据"} ${clock(frame.t)}`} onClick={() => replay(frame)}>
-        <img src={frame.uri} alt={presentation.englishDemo ? "Synthetic parcel demo evidence" : frame.caption || "原视频引用画面"} loading="lazy" decoding="async"/>
-        <span>{icon("play")}<time>{clock(frame.t)}</time><strong>{presentation.englishDemo ? "Replay" : "回看"}</strong></span>
+        aria-label={`Replay evidence ${clock(frame.t)}`} onClick={() => replay(frame)}>
+        <img src={frame.uri} alt={presentation.englishDemo ? "Synthetic parcel demo evidence" : frame.caption || "Cited source frame"} loading="lazy" decoding="async"/>
+        <span>{icon("play")}<time>{clock(frame.t)}</time><strong>Replay</strong></span>
       </button>)}</div>}
-      {!!presentation.frames.length && <p className="reading-evidence-note">{presentation.frames.length} {presentation.englishDemo ? (presentation.frames.length === 1 ? "cited frame" : "cited frames") : "张引用画面"} · {presentation.evidenceNote}</p>}
-      {presentation.frames.length > 2 && <button type="button" className="text-button reading-show-all" onClick={() => setExpanded(!expanded)}>{expanded ? "收起画面" : `查看全部 ${presentation.frames.length} 张画面`}</button>}
+      {!!presentation.frames.length && <p className="reading-evidence-note">{presentation.frames.length} {presentation.frames.length === 1 ? "cited frame" : "cited frames"} · {presentation.evidenceNote}</p>}
+      {query.mode !== "real" && query.video_id === "demo_basketball" && !!response.followups?.length && <div className="reading-demo-examples">
+        <small>Next: choose a follow-up, then send it.</small>
+        <div className="suggestion-buttons">{response.followups.map(question => <button key={question} type="button" onClick={() => ui()?.fillSuggestedQuestion(question, record.id)}>{question}</button>)}</div>
+      </div>}
+      {presentation.frames.length > 2 && <button type="button" className="text-button reading-show-all" onClick={() => setExpanded(!expanded)}>{expanded ? "Show fewer frames" : `Show all ${presentation.frames.length} frames`}</button>}
       {!!presentation.checkedFrames.length && <>
-        <p className="reading-evidence-note">本次补查的抽样画面 · 不是匹配证据，点击回看原视频。</p>
+        <p className="reading-evidence-note">Sampled frames from this search · not confirmed matches. Click to review the source video.</p>
         <div className="reading-evidence-grid">{(checkedExpanded ? presentation.checkedFrames : presentation.checkedFrames.slice(0,2)).map(frame =>
-          <button className="reading-evidence" type="button" key={frame.frame_id} aria-label={`回看已检查画面 ${clock(frame.t)} · 非匹配证据`} onClick={() => replay(frame)}>
-            <img src={frame.uri} alt="已检查的抽样画面，不代表匹配" loading="lazy" decoding="async"/>
-            <span>{icon("play")}<time>{clock(frame.t)}</time><strong>回看</strong></span>
+          <button className="reading-evidence" type="button" key={frame.frame_id} aria-label={`Review sampled frame ${clock(frame.t)} · Non-matching evidence`} onClick={() => replay(frame)}>
+            <img src={frame.uri} alt="Reviewed sample frame; not a confirmed match" loading="lazy" decoding="async"/>
+            <span>{icon("play")}<time>{clock(frame.t)}</time><strong>Replay</strong></span>
           </button>)}</div>
-        {presentation.checkedFrames.length > 2 && <button type="button" className="text-button reading-show-all" onClick={() => setCheckedExpanded(!checkedExpanded)}>{checkedExpanded ? "收起已检查画面" : `查看全部 ${presentation.checkedFrames.length} 张已检查画面`}</button>}
+        {presentation.checkedFrames.length > 2 && <button type="button" className="text-button reading-show-all" onClick={() => setCheckedExpanded(!checkedExpanded)}>{checkedExpanded ? "Show fewer sampled frames" : `View all ${presentation.checkedFrames.length} sampled frames`}</button>}
       </>}
       <div className="reading-response-actions">
-        <button type="button" className="text-button" onClick={() => ui()?.continueFrom(record.id)}>{presentation.englishDemo ? "Ask a follow-up" : query.mode === "real" && !response.events.length ? "重新编辑问题" : "追问这条回答"}</button>
-        {query.engine === "index" && <button type="button" className="text-button" onClick={() => window.FrameSeekPersistence?.searchIndex({question: query.index_search?.resolved_question || query.question, answerRequestId: query.id})}>查看索引与候选画面</button>}
-        {window.FrameSeekWorkbenchModel.shouldOfferTextCandidates(query, ocrAvailable, window.FrameSeekPersistence?.canSearchOcr) && <button type="button" className="text-button" onClick={() => window.FrameSeekPersistence?.searchIndex({question: query.index_search?.resolved_question || query.question, answerRequestId: query.id, autoOcr: true})}>查找更多文字候选 · 不调用模型</button>}
-        <details className="reading-basis"><summary>查看依据与操作</summary>
-          <p>{response.events.length} 组画面 · {presentation.frames.length} 张引用</p>
-          {(response.unresolved || []).map((text,index) => <p key={index}>{text}</p>)}
+        <button type="button" className="text-button" onClick={() => ui()?.continueFrom(record.id)}>{query.mode === "real" && !response.events.length ? "Edit question" : "Ask a follow-up"}</button>
+        {query.engine === "index" && <button type="button" className="text-button" onClick={() => window.FrameSeekPersistence?.searchIndex({question: query.index_search?.resolved_question || query.question, answerRequestId: query.id})}>View index and candidate screens</button>}
+        {window.FrameSeekWorkbenchModel.shouldOfferTextCandidates(query, ocrAvailable, window.FrameSeekPersistence?.canSearchOcr) && <button type="button" className="text-button" onClick={() => window.FrameSeekPersistence?.searchIndex({question: query.index_search?.resolved_question || query.question, answerRequestId: query.id, autoOcr: true})}>Find more text candidates · No model calls</button>}
+        <details className="reading-basis"><summary>Evidence and actions</summary>
+          <p>{response.events.length} frame sets · {presentation.frames.length} references</p>
+          {(response.unresolved || []).map((text,index) => <p key={index}>{displayText(text, query)}</p>)}
           {response.status === "error" && <p>{window.FrameSeekWorkbenchModel.queryFailureReason(query)}</p>}
-          <button type="button" className="text-button" onClick={() => ui()?.saveConclusion(record.id,query)}>保存结论</button>
-          <button type="button" className="text-button danger" onClick={() => ui()?.hideTurn(record.id)}>删除问题</button>
+          <button type="button" className="text-button" onClick={() => ui()?.saveConclusion(record.id,query)}>Save conclusion</button>
+          <button type="button" className="text-button danger" onClick={() => ui()?.hideTurn(record.id)}>Delete question</button>
         </details>
       </div>
     </div>
@@ -197,14 +202,22 @@ function Conversation() {
     window.addEventListener("frameseek-reading-view",scrollSelected);
     return () => {window.removeEventListener("resize", resized);window.removeEventListener("frameseek-thread-focus",scrollSelected);window.removeEventListener("frameseek-reading-view",scrollSelected);};
   }, []);
-  return <div className="conversation-stream" role="region" aria-label="问题、回答与视频证据">
-    {!records.length && <div className="reading-empty"><p className="reading-eyebrow">问视频，回看证据</p><h1>从一个问题开始。</h1><p>答案和对应画面会一起留在这里。</p>
-      {state.sourceInfo?.id === "demo_parcel" && !state.local && <div className="reading-demo-examples">
-        <p>试试合成演示 · 预设回答，不调用模型</p>
+  return <div className="conversation-stream" role="region" aria-label="Questions, answers and video evidence">
+    {!records.length && <div className="reading-empty">
+      <div className="reading-empty-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p className="reading-eyebrow">Video investigation / Conversation</p>
+      <h1>{state.local ? "Video loaded." : "Start with a question."}</h1>
+      <p className="reading-empty-description">{state.local ? "You can play the video now. Ask questions and review frames when the source is ready." : "Ask a question, review the footage, and follow the evidence."}</p>
+      {state.local && <div className="reading-empty-status"><span className="reading-status-dot" aria-hidden="true"></span><div><strong>Questions unavailable for now</strong><p>Check the source status below the player for details.</p></div></div>}
+      {!state.local && <div className="reading-empty-steps" aria-label="Investigation steps"><span>01 Ask</span><span>02 Review</span><span>03 Follow up</span></div>}
+      {["demo_parcel", "demo_basketball"].includes(state.sourceInfo?.id) && !state.local && <div className="reading-demo-examples">
+        <p>{state.sourceInfo?.id === "demo_basketball" ? "Synthetic basketball demo" : "Synthetic parcel demo"} · Preset answers · No model calls</p>
+        {state.sourceInfo?.id === "demo_basketball" && <button type="button" className="text-button" onClick={() => document.querySelector(".reading-demo-examples .suggestion-buttons button")?.focus()}>Start basketball demo</button>}
         <div className="suggestion-buttons">{window.FrameSeekWorkbenchModel.composerSuggestions(state).items.map(question =>
           <button key={question} type="button" onClick={() => ui()?.fillSuggestedQuestion(question)}>{question}</button>)}</div>
-        <small>点击填入，确认后发送。</small>
+        <small>Choose a question, then send it. Replay a frame and ask a follow-up.</small>
       </div>}
+      {state.sourceInfo?.id !== "demo_basketball" && <button type="button" className="text-button" onClick={() => window.FrameSeekPersistence?.openDemo()}>Start basketball demo</button>}
     </div>}
     {records.map(record => <ConversationTurn key={record.id} record={record} selected={record.id===state.selectedId} ocrAvailable={!!state.sourceInfo?.knowledge_status?.ocr_candidates_available}/>)}
   </div>;
@@ -270,19 +283,19 @@ function SourcePicker() {
   };
   return <div className="source-picker" ref={root}>
     <button type="button" className="source-picker-trigger" ref={trigger}
-      aria-label={`切换视频：${current?.name || "正在读取"}`} aria-haspopup="dialog"
+      aria-label={`Switch video: ${current?.name || "Loading"}`} aria-haspopup="dialog"
       aria-expanded={open} aria-controls="source-picker-panel" disabled={sources.busy}
       onClick={() => setOpen(value => !value)} onKeyDown={event => {
         if (event.key === "ArrowDown") {event.preventDefault(); setOpen(true);}
       }}>
       {thumb(current)}
-      <span className="source-picker-copy"><small>{sources.busy ? "正在切换…" : "当前视频"}</small>
-        <strong>{current?.name || "正在读取视频…"}</strong></span>
+      <span className="source-picker-copy"><small>{sources.busy ? "Switching…" : "Current video"}</small>
+        <strong>{current?.name || "Loading video…"}</strong></span>
       <span className="source-picker-chevron" aria-hidden="true">⌄</span>
     </button>
     {open && <section id="source-picker-panel" className="source-picker-panel" role="dialog"
-      aria-label="切换视频" ref={panel} onKeyDown={navigate}>
-      <div className="source-picker-heading">切换视频 <span>{sources.items.length} 个视频</span></div>
+      aria-label="Switch video" ref={panel} onKeyDown={navigate}>
+      <div className="source-picker-heading">Switch video <span>{sources.items.length} videos</span></div>
       {sources.items.map(item => <button type="button" className="source-picker-item" key={item.id}
         aria-current={item.id === sources.selected ? "true" : undefined} onClick={() => choose(item.id)}>
         {thumb(item)}<span className="source-picker-copy"><strong>{item.name}</strong><small>{item.detail}</small></span>
@@ -290,18 +303,18 @@ function SourcePicker() {
       </button>)}
       <button className="source-picker-manage" type="button" onClick={() => {
         setOpen(false); document.getElementById("open-sources").click();
-      }}>管理视频 <span aria-hidden="true">↗</span></button>
-      <p className="source-picker-footnote">切换会保存当前调查，保留各自聊天记录。</p>
+      }}>Manage videos <span aria-hidden="true">↗</span></button>
+      <p className="source-picker-footnote">Switching saves the current investigation and keeps each conversation.</p>
     </section>}
   </div>;
 }
 
 function ProjectTitle() {
   const state = useDesk();
-  return <div className="project-name" data-title={state.title || "未命名调查"}>
-    <input aria-label="调查名称" title="点击修改调查名称" value={state.title}
+  return <div className="project-name" data-title={state.title || "Untitled investigation"}>
+    <input aria-label="Investigation name" title="Click to rename investigation" value={state.title}
       onChange={event => store.rename(event.target.value)}
-      onBlur={() => !store.getSnapshot().title.trim() && store.rename("未命名调查")}
+      onBlur={() => !store.getSnapshot().title.trim() && store.rename("Untitled investigation")}
       maxLength={80} />
   </div>;
 }
@@ -315,13 +328,13 @@ function ComposerSuggestions() {
     return () => input.removeEventListener("input", read);
   }, [state.epoch, state.sourceInfo?.id, state.title, state.records, state.selectedId]);
   const suggestions = window.FrameSeekWorkbenchModel.composerSuggestions(state);
-  const shortLabels = suggestions.titles || (suggestions.label.startsWith("示例问题")
-    ? ["概括可见场景", "查找清晰片段", "哪些内容无法确认？"]
-    : suggestions.label === "演示示例" ? ["包裹何时在中央？", "什么时候移到右侧？", "画面里有叉车吗？"] : null);
-  return <details className="composer-suggestions composer-popup" name="composer-popover" aria-label="建议问题">
-    <summary title="查看建议问题，点击只填入，不会发送">建议</summary>
+  const shortLabels = suggestions.titles || (suggestions.label.startsWith("Example questions")
+    ? ["Summarize the scene", "Find a clear moment", "What is unclear?"]
+    : suggestions.label === "Demo questions" && state.sourceInfo?.id === "demo_parcel" ? ["When is the parcel centered?", "When is it on the right?", "Is there a forklift?"] : null);
+  return <details className="composer-suggestions composer-popup" name="composer-popover" aria-label="Suggested questions">
+    <summary title="View the suggested questions, click to fill in only and will not send it.">Suggestions</summary>
     <div className="composer-suggestion-panel">
-      <div className="suggestion-heading"><span>{suggestions.label}</span><small>{hasDraft ? "清空草稿后可选" : "点击填入，不会发送"}</small></div>
+      <div className="suggestion-heading"><span>{suggestions.label}</span><small>{hasDraft ? "Optional after clearing draft" : "Click to fill in; it will not send"}</small></div>
       <div className="suggestion-buttons">{suggestions.items.map((question, index) =>
         <button key={question} type="button" title={question} disabled={hasDraft || state.local}
           onClick={(event) => {
@@ -330,13 +343,13 @@ function ComposerSuggestions() {
           }}>{shortLabels?.[index] || question}</button>
       )}</div>
       {suggestions.basis && <div className="suggestion-basis">
-        <button type="button" title="回看已有证据，不发送问题、不调用模型" onClick={(event) => {
+        <button type="button" title="Review saved evidence without sending a question or calling a model" onClick={(event) => {
           const current = store.getSnapshot();
           const source = current.records.find(item => item.id === suggestions.basis.turnId && !item.hidden && item.query.id === suggestions.basis.queryId);
           if (source && (current.sourceInfo?.id || "demo_parcel") === suggestions.basis.videoId)
             ui()?.seek(suggestions.basis.t, source.query);
           event.currentTarget.closest("details").open=false;
-        }}><img src={suggestions.basis.uri} alt="" /><span>回看依据 {clock(suggestions.basis.t)}</span></button>
+        }}><img src={suggestions.basis.uri} alt="" /><span>Review evidence {clock(suggestions.basis.t)}</span></button>
       </div>}
     </div>
   </details>;
@@ -355,8 +368,8 @@ function Outline() {
   return (
     <section className="investigation-outline">
       <div className="section-line">
-        <h2>{reading ? "最近的提问" : "调查脉络"}</h2>
-        <span>{visible.length} 轮</span>
+        <h2>{reading ? "Recent questions" : "Investigation outline"}</h2>
+        <span>{visible.length} turns</span>
       </div>
       {visible.length ? (
         <ol>
@@ -369,7 +382,7 @@ function Outline() {
                 <span className="outline-number">
                   {String(state.records.indexOf(record) + 1).padStart(2, "0")}
                 </span>
-                <span>{record.query.question}</span>
+                <span>{displayText(record.query.question, record.query)}</span>
                 <span
                   className={`outline-state ${record.query.response.status}`}
                 />
@@ -379,17 +392,17 @@ function Outline() {
         </ol>
       ) : (
         <p className="muted-text">
-          每次追问会留在画布上。选中旧问题，可以从那里继续。
+          Follow-ups remain on the canvas. Select an earlier question to continue.
         </p>
       )}
       {!!hidden.length && <details className="deleted-turns">
-        <summary>已删除的问题（{hidden.length}）</summary>
+        <summary>Deleted questions ({hidden.length})</summary>
         {hidden.map(record => <div key={record.id}>
-          <span>{record.query.question}</span>
-          <button className="text-button" onClick={() => ui()?.restoreTurn(record.id)}>恢复问题 {record.id.split("-")[1]}</button>
+          <span>{displayText(record.query.question, record.query)}</span>
+          <button className="text-button" onClick={() => ui()?.restoreTurn(record.id)}>Restore question {record.id.split("-")[1]}</button>
         </div>)}
       </details>}
-      <p className="session-footnote">素材与问题独立保存 · 可继续上次调查</p>
+      <p className="session-footnote">Videos and questions are saved separately · Continue your investigation later</p>
     </section>
   );
 }
@@ -441,8 +454,8 @@ function Inspector() {
     const result = fn();
     setMessage(
       result
-        ? "已加入关键发现，保留来源关联。"
-        : "暂时无法保存，发现集合最多保留 8 项。",
+        ? "Added to findings with its source."
+        : "Could not save; findings are limited to 8 items.",
     );
   };
   function exportNotes() {
@@ -456,7 +469,7 @@ function Inspector() {
     const url = URL.createObjectURL(new Blob([content], {type}));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `FrameSeek-调查报告.${extension}`;
+    anchor.download = `FrameSeek-investigation-report.${extension}`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -473,7 +486,7 @@ function Inspector() {
       try {
         if (includeImages) for (const frame of reportData.evidence.slice(0, 24)) {
           if (!window.FrameSeekReport.safeFrameUri(reportData.source.id, frame.uri)) continue;
-          setReportStatus(`正在收集证据画面 ${Object.keys(images).length} / ${reportData.evidence.length}…`);
+          setReportStatus(`Collecting evidence ${Object.keys(images).length} / ${reportData.evidence.length}…`);
           try {
             const response = await fetch(frame.uri, {credentials: "same-origin", signal: controller.signal});
             if (!response.ok) continue;
@@ -502,21 +515,21 @@ function Inspector() {
         }
         if (controller.signal.aborted) return;
         downloadFile(window.FrameSeekReport.html(reportData, images), "html", "text/html;charset=utf-8");
-        setReportStatus(`HTML 已导出，内嵌 ${Object.keys(images).length} / ${reportData.evidence.length} 张画面。未内嵌项保留说明；文件可离线打开或打印为 PDF。`);
+        setReportStatus(`HTML exported, embedded ${Object.keys(images).length} / ${reportData.evidence.length} picture. Notes are retained for items not embedded; files can be opened offline or printed to PDF.`);
       } finally { setExporting(false); exportController.current = null; }
       return;
     }
-    setReportStatus("下载已发起。这份报告保留打开导出窗口时的调查快照。");
+    setReportStatus("Download initiated. This report retains a snapshot of the investigation when the export window was opened.");
   }
   return (
     <>
       <div className="inspector-heading">
         <span>
-          调查检查器<small>从结论回到证据</small>
+          Investigation inspector<small>From conclusion to evidence</small>
         </span>
         <button
           className="icon-button"
-          aria-label="收起调查检查器"
+          aria-label="Collapse investigation inspector"
           onClick={() => ui()?.toggleInspector()}
         >
           {icon("x")}
@@ -525,7 +538,7 @@ function Inspector() {
       <div
         className="inspector-tabs"
         role="tablist"
-        aria-label="调查检查器内容"
+        aria-label="Investigation inspector content"
         onKeyDown={(event) => {
           if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
           event.preventDefault();
@@ -545,7 +558,7 @@ function Inspector() {
           aria-selected={tab === "context"}
           onClick={() => setTab("context")}
         >
-          当前问题
+          Current question
         </button>
         <button
           id="inspector-findings-tab"
@@ -556,7 +569,7 @@ function Inspector() {
           aria-selected={tab === "findings"}
           onClick={() => setTab("findings")}
         >
-          发现 <span>{state.pins.length}</span>
+          Findings <span>{state.pins.length}</span>
         </button>
       </div>
       <div
@@ -564,7 +577,7 @@ function Inspector() {
         ref={scroll}
         className="inspector-scroll"
         role="tabpanel"
-        aria-label={tab === "context" ? "当前问题详情" : "已保存的发现"}
+        aria-label={tab === "context" ? "Current question details" : "Saved findings"}
         aria-labelledby={
           tab === "context" ? "inspector-context-tab" : "inspector-findings-tab"
         }
@@ -574,40 +587,40 @@ function Inspector() {
             <>
               <div className="inspector-context-line">
                 <p className="inspector-kicker">
-                  问题{" "}
+                  Question{" "}
                   {String(state.records.indexOf(selected) + 1).padStart(2, "0")}
                 </p>
                 <span
                   className={`result-pill ${selected.query.response.status}`}
                 >
-                  {selected.query.engine === "index" ? "索引问答 · 未调用模型" : labels[selected.query.response.status]}
+                  {selected.query.engine === "index" ? "Index Q&A · Model not called" : labels[selected.query.response.status]}
                 </span>
               </div>
-              <h2 className="inspector-question">{selected.query.question}</h2>
+              <h2 className="inspector-question">{displayText(selected.query.question, selected.query)}</h2>
               <div className="inspector-primary-actions">
                 <button
                   className="outline-button"
                   disabled={state.local}
                   onClick={() => ui()?.continueFrom(selected.id)}
                 >
-                  {selected.query.mode === "real" && !selected.query.response.events.length ? "重新提问" : "继续追问"} {icon("arrow-right")}
+                  {selected.query.mode === "real" && !selected.query.response.events.length ? "Ask again" : "Keep asking"} {icon("arrow-right")}
                 </button>
                 <button
                   className="text-button"
                   onClick={() => ui()?.select(selected.id)}
                 >
-                  定位画布
+                  Position canvas
                 </button>
-                <button className="text-button danger" onClick={() => ui()?.hideTurn(selected.id)}>删除问题</button>
+                <button className="text-button danger" onClick={() => ui()?.hideTurn(selected.id)}>Delete question</button>
               </div>
               <div className="inspector-conclusion">
                 <div className="section-line">
-                  <h3>当前结论</h3>
+                  <h3>Current conclusion</h3>
                   {["ok", "partial"].includes(
                     selected.query.response.status,
                   ) && (
                     <button
-                      aria-label="保存当前结论"
+                      aria-label="Save current conclusion"
                       className="text-button"
                       onClick={() =>
                         action(() =>
@@ -615,37 +628,37 @@ function Inspector() {
                         )
                       }
                     >
-                      保存结论
+                      Save conclusion
                     </button>
                   )}
                 </div>
-                <p>{selected.query.response.answer}</p>
-                {selected.query.engine === "index" && <button className="outline-button" onClick={()=>window.FrameSeekPersistence?.searchIndex({question:selected.query.index_search?.resolved_question || selected.query.question, answerRequestId:selected.query.id})}>查看索引时间线 · 不调用模型</button>}
+                <p>{displayText(selected.query.response.answer, selected.query)}</p>
+                {selected.query.engine === "index" && <button className="outline-button" onClick={()=>window.FrameSeekPersistence?.searchIndex({question:selected.query.index_search?.resolved_question || selected.query.question, answerRequestId:selected.query.id})}>View index timeline · No model calls</button>}
                 {window.FrameSeekWorkbenchModel.queryFailureReason(selected.query) &&
                   <div className="answer-review-note" role="note">
-                    <strong>为什么没有回答</strong>
+                    <strong>why no answer</strong>
                     <p>{window.FrameSeekWorkbenchModel.queryFailureReason(selected.query)}</p>
-                    <p>可点击「重新提问」取回原问题，编辑后自行发送；不会自动重试。</p>
+                    <p>You can click "Reask" to retrieve the original question, edit it and send it yourself; it will not be automatically retried.</p>
                   </div>}
                 {window.FrameSeekWorkbenchModel.answerReviewNotes(selected.query.response.answer).map(note =>
                   <div className="answer-review-note" key={note} role="note">
-                    <strong>数字变化需要复核</strong><p>{note}</p>
-                    {!!frames.length && <button type="button" onClick={() => ui()?.seek(frames[0].t, selected.query)}>回看对应证据 {clock(frames[0].t)}</button>}
+                    <strong>Verify numerical changes</strong><p>{note}</p>
+                    {!!frames.length && <button type="button" onClick={() => ui()?.seek(frames[0].t, selected.query)}>Look back at the corresponding evidence {clock(frames[0].t)}</button>}
                   </div>
                 )}
               </div>
               {!!selected.query.response.unresolved.length && (
                 <div className="open-questions">
-                  <h3>仍需核实</h3>
+                  <h3>Still need to verify</h3>
                   {selected.query.response.unresolved.map((text) => (
-                    <p key={text}>{text}</p>
+                    <p key={text}>{displayText(text, selected.query)}</p>
                   ))}
                 </div>
               )}
               {!!frames.length && (
                 <section className="inspector-evidence">
                   <div className="section-line">
-                    <h3>引用画面</h3>
+                    <h3>Referenced frame</h3>
                     <span>{frames.length}</span>
                   </div>
                   {frames.map((frame) => (
@@ -654,7 +667,7 @@ function Inspector() {
                         className="frame-preview"
                         draggable={false}
                         data-drag-evidence
-                        title="拖到画布保存，或点击回看"
+                        title="Drag to save on the canvas, or click to replay"
                         onPointerDown={(event) => {
                           if (event.button !== 0) return;
                           event.preventDefault();
@@ -721,13 +734,13 @@ function Inspector() {
                           }
                           ui()?.seek(frame.t, selected.query);
                         }}
-                        aria-label={`回看引用 ${clock(frame.t)}`}
+                        aria-label={`Look back at the quote ${clock(frame.t)}`}
                       >
-                        <img src={frame.uri} alt={frame.caption} loading="lazy" decoding="async" />
+                        <img src={frame.uri} alt={displayText(frame.caption, selected.query)} loading="lazy" decoding="async" />
                         <span>{clock(frame.t)}</span>
                       </button>
                       <div>
-                        <p>{frame.caption}</p>
+                        <p>{displayText(frame.caption, selected.query)}</p>
                         <button
                           className="text-button"
                           onClick={() =>
@@ -739,9 +752,9 @@ function Inspector() {
                               ),
                             )
                           }
-                          aria-label={`保存证据 ${clock(frame.t)}`}
+                          aria-label={`preserve evidence ${clock(frame.t)}`}
                         >
-                          留在画布 {icon("plus")}
+                          Save to canvas {icon("plus")}
                         </button>
                       </div>
                     </div>
@@ -750,22 +763,22 @@ function Inspector() {
               )}
               <details className="basis-section">
                 <summary>
-                  这轮依据<span>{frames.length} 张证据 · {selected.query.mode === "real" ? (frames.length ? "画面证据" : "未生成有效证据") : "预设匹配"}</span>
+                  Sources for this answer<span>{frames.length} evidence frames · {selected.query.mode === "real" ? (frames.length ? "Video evidence" : "No valid evidence generated") : "Preset match"}</span>
                 </summary>
                 <ol className="basis-steps">
                   <li>
                     <span>01</span>
                     <div>
-                      原视频范围<small>{state.sourceInfo?.name || "合成视频"} · 00:00–{clock(state.sourceInfo?.metadata?.duration || 18)}</small>
+                      Source video range<small>{state.sourceInfo?.name || "Synthetic video"} · 00:00–{clock(state.sourceInfo?.metadata?.duration || 18)}</small>
                     </div>
                   </li>
                   <li>
                     <span>02</span>
                     <div>
-                      {selected.query.mode === "real" ? "证据检查" : "固定样例匹配"}
+                      {selected.query.mode === "real" ? "evidence examination" : "Preset example match"}
                       <small>
-                        {selected.query.response.events.length} {['local','index'].includes(selected.query.engine) ? '组匹配画面' : '段事件'} ·{" "}
-                        {frames.length} 张证据帧
+                        {selected.query.response.events.length} {['local','index'].includes(selected.query.engine) ? "matching frame sets" : "events"} ·{" "}
+                        {frames.length} evidence frames
                       </small>
                     </div>
                   </li>
@@ -773,7 +786,7 @@ function Inspector() {
                     <span>03</span>
                     <div>
                       {labels[selected.query.response.status]}
-                      <small>{selected.query.engine === "index" ? "已检索索引 · 未新增视觉复核" : selected.query.mode === "real" ? `${selected.query.response.trace.visible.segments_reviewed} 个片段已回看` : "未执行新的模型推理"}</small>
+                      <small>{selected.query.engine === "index" ? "Searched index · No new visual review added" : selected.query.mode === "real" ? `${selected.query.response.trace.visible.segments_reviewed} clips have been viewed` : "New model inference is not performed"}</small>
                     </div>
                   </li>
                 </ol>
@@ -782,17 +795,17 @@ function Inspector() {
           ) : (
             <div className="inspector-empty">
               <p className="inspector-kicker">FOLLOW THE EVIDENCE</p>
-              <h2>让结论有据可查。</h2>
-              <p>选中画布中的问题，在这里查看它的依据、证据和未确认项。</p>
+              <h2>Keep conclusions grounded in evidence.</h2>
+              <p>Select an issue in the canvas to view its rationale, evidence, and unconfirmed items here.</p>
               <button className="outline-button" onClick={() => ui()?.demos()}>
-                探索演示路径 {icon("arrow-right")}
+                Explore the demo path {icon("arrow-right")}
               </button>
             </div>
           )
         ) : (
           <>
             <label className="inspector-kicker" htmlFor="finding-group">
-              发现分组
+              Group findings
             </label>
             <input
               id="finding-group"
@@ -802,26 +815,26 @@ function Inspector() {
               maxLength={60}
             />
             <div className="collection-summary">
-              <span>{state.pins.length} / 8 项已保存</span>
+              <span>{state.pins.length} / 8 items saved</span>
               <span>
-                {pinnedFrames.length} 张证据 ·{" "}
-                {state.pins.length - pinnedFrames.length} 个结论
+                {pinnedFrames.length} evidence frames ·{" "}
+                {state.pins.length - pinnedFrames.length} conclusions
               </span>
             </div>
             <div className="finding-controls">
               <div
                 className="finding-filters"
                 role="group"
-                aria-label="发现类型筛选"
+                aria-label="Filter findings by type"
               >
                 {[
-                  ["all", "全部"],
-                  ["evidence", "证据"],
-                  ["conclusion", "结论"],
+                  ["all", "All"],
+                  ["evidence", "Evidence"],
+                  ["conclusion", "Conclusions"],
                 ].map(([value, label]) => (
                   <button
                     key={value}
-                    aria-label={`筛选${label}发现`}
+                    aria-label={`filter${label}Findings`}
                     aria-pressed={filter === value}
                     onClick={() => setFilter(value)}
                   >
@@ -835,15 +848,15 @@ function Inspector() {
                 ))}
               </div>
               <label className="sr-only" htmlFor="finding-order">
-                发现排序
+                Sort findings
               </label>
               <select
                 id="finding-order"
                 value={order}
                 onChange={(e) => setOrder(e.target.value)}
               >
-                <option value="saved">保存顺序</option>
-                <option value="time">视频时间</option>
+                <option value="saved">Save order</option>
+                <option value="time">video time</option>
               </select>
             </div>
             {visiblePins.length ? (
@@ -852,32 +865,32 @@ function Inspector() {
                   <div className={`finding-row ${pin.kind}`} key={pin.id}>
                     <button
                       className="finding-main"
-                      aria-label={`定位发现：${pin.title}`}
+                      aria-label={`Location discovery:${pin.title}`}
                       onClick={() => ui()?.focusFinding(pin.id)}
                     >
                       {pin.kind === "evidence" ? (
-                        <img src={pin.frame.uri} alt={pin.frame.caption} />
+                        <img src={pin.frame.uri} alt={displayText(pin.frame.caption, pin.query)} />
                       ) : (
                         icon("chats-circle")
                       )}
                       <span>
                         <small>
-                          {pin.kind === "evidence" ? "证据帧" : "结论"} /{" "}
+                          {pin.kind === "evidence" ? "Evidence frame" : "Conclusion"} /{" "}
                           {pin.kind === "evidence"
                             ? clock(pin.frame.t)
                             : labels[pin.query.response.status]}
                         </small>
                         <span className="finding-caption">
                           {pin.kind === "evidence"
-                            ? pin.frame.caption
-                            : pin.query.response.answer}
+                            ? displayText(pin.frame.caption, pin.query)
+                            : displayText(pin.query.response.answer, pin.query)}
                         </span>
                       </span>
                     </button>
                     <div className="finding-provenance">
                       <button
                         className="text-button"
-                        aria-label={`查看发现来源：${pin.title}`}
+                        aria-label={`View discovery sources:${pin.title}`}
                         disabled={
                           !state.records.some(
                             (record) => record.id === pin.turnId,
@@ -891,21 +904,21 @@ function Inspector() {
                             .focus();
                         }}
                       >
-                        来源：{pin.query.question}
+                        Source: {displayText(pin.query.question, pin.query)}
                       </button>
                       {pin.kind === "evidence" && (
                         <button
                           className="text-button"
-                          aria-label={`回看已保存证据 ${clock(pin.frame.t)}`}
+                          aria-label={`Review saved evidence ${clock(pin.frame.t)}`}
                           onClick={() => ui()?.seek(pin.frame.t, pin.query)}
                         >
-                          {icon("play")}回看
+                          {icon("play")}Replay
                         </button>
                       )}
                     </div>
                     <button
                       className="icon-button remove-finding"
-                      aria-label={`移除${pin.title}`}
+                      aria-label={`Remove${pin.title}`}
                       onClick={() => ui()?.removeFinding(pin.id)}
                     >
                       {icon("x")}
@@ -916,8 +929,8 @@ function Inspector() {
             ) : (
               <p className="muted-text">
                 {state.pins.length
-                  ? "这个分类还没有发现。切换到全部可查看已保存内容。"
-                  : "把引用画面或当前结论保存到这里。它们会作为独立对象留在画布上。"}
+                  ? "This category has not been found yet. Switch to All to view saved content."
+                  : "Save referenced images or current conclusions here. They remain on the canvas as independent objects."}
               </p>
             )}
             <button
@@ -925,32 +938,32 @@ function Inspector() {
               disabled={pinnedFrames.length < 2}
               onClick={() => compare.current.showModal()}
             >
-              并排核对两帧{" "}
+              Check two frames side by side{" "}
               <span>
                 {pinnedFrames.length < 2
-                  ? "需 2 张证据"
-                  : `${pinnedFrames.length} 张可用`}
+                  ? "2 pieces of evidence required"
+                  : `${pinnedFrames.length} Zhang Keke`}
               </span>
             </button>
             <label
               className="section-line note-label"
               htmlFor="investigation-note"
             >
-              调查笔记 <span>{state.note.length} / 1200</span>
+              Investigation Notes <span>{state.note.length} / 1200</span>
             </label>
             <textarea
               id="investigation-note"
-              aria-label="调查笔记"
-              placeholder="记录观察、疑问或下一步…"
+              aria-label="Investigation Notes"
+              placeholder="Record observations, questions, or next steps…"
               value={state.note}
               onChange={(e) => store.annotate(e.target.value)}
               maxLength={1200}
             />
             <p className="session-footnote">
-              名称、发现和笔记自动保存在本机，刷新后可继续。
+              Names, findings and notes are automatically saved locally and can be continued after refreshing.
             </p>
             <button className="export-button" onClick={exportNotes}>
-              导出调查记录 {icon("arrow-right")}
+              Export investigation records {icon("arrow-right")}
             </button>
           </>
         )}
@@ -966,11 +979,11 @@ function Inspector() {
         <header>
           <div>
             <p className="inspector-kicker">EVIDENCE / COMPARISON</p>
-            <h2 id="compare-title">并排核对</h2>
+            <h2 id="compare-title">Check side by side</h2>
           </div>
           <button
             className="icon-button"
-            aria-label="关闭证据对照"
+            aria-label="Close evidence comparison"
             onClick={() => compare.current.close()}
           >
             {icon("x")}
@@ -979,10 +992,10 @@ function Inspector() {
         <div className="compare-frames">
           {pinnedFrames.slice(0, 2).map((pin) => (
             <figure key={pin.id}>
-              <img src={pin.frame.uri} alt={pin.frame.caption} />
+              <img src={pin.frame.uri} alt={displayText(pin.frame.caption, pin.query)} />
               <figcaption>
                 <strong>{clock(pin.frame.t)}</strong>
-                <span>{pin.frame.caption}</span>
+                <span>{displayText(pin.frame.caption, pin.query)}</span>
                 <button
                   className="text-button"
                   onClick={() => {
@@ -990,14 +1003,14 @@ function Inspector() {
                     ui()?.seek(pin.frame.t, pin.query);
                   }}
                 >
-                  回看此帧 {icon("play")}
+                  Look back at this frame {icon("play")}
                 </button>
               </figcaption>
             </figure>
           ))}
         </div>
         <p className="muted-text">
-          同一素材的证据帧。可见位置变化不等于已确认连续移动。
+          Evidence frames of the same footage. Visible position changes do not equal confirmed continuous movement.
         </p>
       </dialog>
       <dialog
@@ -1009,36 +1022,36 @@ function Inspector() {
         <header>
           <div>
             <p className="inspector-kicker">INVESTIGATION / RECORD</p>
-            <h2 id="report-title">调查报告</h2>
+            <h2 id="report-title">investigation report</h2>
           </div>
           <button
             className="icon-button"
-            aria-label="关闭调查记录"
+            aria-label="Close investigation report"
             onClick={() => report.current.close()}
           >
             {icon("x")}
           </button>
         </header>
-        <p className="report-summary">{reportData?.questions.length || 0} 个问题 · {reportData?.findings.length || 0} 项发现 · {reportData?.evidence.length || 0} 张证据画面。包含当前保留的对话与发现来源；未确认项单独列出。</p>
-        <textarea aria-label="调查记录 Markdown" value={reportText} readOnly />
-        <label className="report-image-option"><input type="checkbox" checked={includeImages} onChange={e => setIncludeImages(e.target.checked)} disabled={exporting} /> HTML 内嵌证据画面（最多 24 张、16 MB，形成可分享的本地副本）</label>
+        <p className="report-summary">{reportData?.questions.length || 0} questions · {reportData?.findings.length || 0} findings · {reportData?.evidence.length || 0} evidence frames. Includes saved conversations and finding sources; unconfirmed items are listed separately.</p>
+        <textarea aria-label="Investigation record Markdown" value={reportText} readOnly />
+        <label className="report-image-option"><input type="checkbox" checked={includeImages} onChange={e => setIncludeImages(e.target.checked)} disabled={exporting} /> Embed evidence frames in HTML (up to 24 frames, 16 MB)</label>
         <div className="report-actions">
           <button
             className="outline-button"
             onClick={async () => {
               try {
                 await navigator.clipboard.writeText(reportText);
-                setReportStatus("Markdown 已复制。");
+                setReportStatus("Markdown copied.");
               } catch {
-                setReportStatus("可在上方选择文字，使用浏览器复制。");
+                setReportStatus("You can select text above and copy it using your browser.");
               }
             }}
           >
-            复制 Markdown
+            Copy Markdown
           </button>
-          <button className="outline-button" disabled={exporting} onClick={() => downloadReport("md")}>下载 Markdown</button>
-          <button className="outline-button" disabled={exporting} onClick={() => downloadReport("json")}>下载 JSON</button>
-          <button className="outline-button" disabled={exporting} onClick={() => downloadReport("html").catch(() => setReportStatus("导出已取消或失败，请重试。"))}>{exporting ? "收集画面…" : "下载 HTML"}</button>
+          <button className="outline-button" disabled={exporting} onClick={() => downloadReport("md")}>Download Markdown</button>
+          <button className="outline-button" disabled={exporting} onClick={() => downloadReport("json")}>Download JSON</button>
+          <button className="outline-button" disabled={exporting} onClick={() => downloadReport("html").catch(() => setReportStatus("The export was canceled or failed, please try again."))}>{exporting ? "Collect images…" : "Download HTML"}</button>
         </div>
         <p className="muted-text" role="status">
           {reportStatus}

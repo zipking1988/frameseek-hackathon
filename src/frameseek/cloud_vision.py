@@ -165,11 +165,16 @@ class CloudVision:
 
     def prepare(self, source, owner, question):
         if not self.configured():
-            return {"kind": "capability_blocked", "message": "云端视觉配置未就绪，原问题已保留。"}
+            return {
+                "kind": "capability_blocked",
+                "message": "Cloud vision is not configured. Your question has been kept.",
+            }
         if len(question.encode()) > 2000:
             return {
                 "kind": "capability_blocked",
-                "message": "问题过长，请缩短到约600个中文字后发送；尚未调用模型。",
+                "message": (
+                    "This question is too long. Shorten it and try again; no model call was made."
+                ),
             }
         identity, cache = self.location(source)
         duration = json.loads(source["metadata"])["duration"]
@@ -217,9 +222,10 @@ class CloudVision:
                 "kind": "budget_blocked",
                 "estimate": estimate,
                 "message": (
-                    f"云端处理入口已就绪，但本次预算准入未通过。首次索引尚需{new_windows}次分段识别；"
-                    f"本路径保守最多{calls}次调用，金额预留上限{money_label}（不是实际扣费）。"
-                    "尚未调用模型，原问题已保留；没有增加预算或请求上限。"
+                    "Cloud vision is configured, but this request exceeds the approved budget. "
+                    f"Indexing requires {new_windows} new segment calls. This route reserves up to "
+                    f"{calls} calls and {money_label}; the reservation is not an actual charge. "
+                    "No model call was made, your question was kept, and no limits were increased."
                 ),
             }
         return {"kind": "ready", "estimate": estimate}

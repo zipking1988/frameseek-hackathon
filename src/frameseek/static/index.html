@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#111f2b" />
-    <title>FrameSeek · 调查画布</title>
+    <title>FrameSeek · Investigation workspace</title>
     <link rel="icon" href="/static/icons/play.svg" type="image/svg+xml" />
     <link
       rel="preload"
@@ -14,84 +14,92 @@
       crossorigin
     />
     <link rel="stylesheet" href="/static/styles.css?v=136d47b61d96" />
-    <link rel="stylesheet" href="/static/workbench.css?v=a24fe6d59de9" />
-    <script src="/static/demo-conversation.js?v=dc6be859d3f4" defer></script>
-    <script src="/static/investigation-canvas.js?v=e14342950b01" defer></script>
-    <script src="/static/workbench-model.js?v=a631c2bf32c6" defer></script>
-    <script src="/static/investigation-report.js?v=8411abe357f8" defer></script>
-    <script src="/static/workbench.js?v=99a5fcef29c4" defer></script>
-    <script src="/static/workspace.js?v=814e7ef73447" defer></script>
-    <script src="/static/app.js?v=acc5aa93fdde" defer></script>
+    <link rel="stylesheet" href="/static/workbench.css?v=0f574ea4a9e8" />
+    <script src="/static/legacy-demo-english.js?v=f87cdb8c6f69" defer></script>
+    <script src="/static/demo-conversation.js?v=28ad0f1c7b4f" defer></script>
+    <script src="/static/investigation-canvas.js?v=fc7cefb41fac" defer></script>
+    <script src="/static/workbench-model.js?v=c1a9a6fbb1be" defer></script>
+    <script src="/static/investigation-report.js?v=e1f15f8b101a" defer></script>
+    <script src="/static/workbench.js?v=b5ec15d59940" defer></script>
+    <script src="/static/workspace.js?v=2ae350dc71fc" defer></script>
+    <script src="/static/app.js?v=5137f9fc6db2" defer></script>
   </head>
-  <body>
-    <a href="#question" class="skip-link">跳到对话输入</a>
+  <body data-workspace-startup="loading">
+    <a href="#question" class="skip-link">Skip to question input</a>
+    <div class="workspace-startup" role="status" aria-live="polite">
+      <strong>FrameSeek</strong>
+      <p class="workspace-startup-loading">Restoring your investigation…</p>
+      <p class="workspace-startup-error">Could not connect. Your saved investigations have not been deleted.</p>
+      <button id="startup-retry" type="button">Reload</button>
+      <noscript>Enable JavaScript and reload the workspace.</noscript>
+    </div>
     <div class="desktop-message">
       <h1>FrameSeek</h1>
-      <p>调查画布需要桌面空间。请在电脑浏览器中打开。</p>
+      <p>The investigation canvas requires a desktop browser.</p>
     </div>
     <div class="agent-shell workbench-shell conversation-mode">
       <header class="studio-header">
-        <a class="brand" href="/" aria-label="FrameSeek 首页">FrameSeek</a>
+        <a class="brand" href="/" aria-label="FrameSeek home">FrameSeek</a>
         <div class="header-project">
           <div id="project-title"></div>
           <details id="investigation-menu" class="header-more investigation-menu">
-            <summary class="investigation-trigger" aria-label="调查操作">⌄</summary>
+            <summary class="investigation-trigger" aria-label="Investigation actions">⌄</summary>
             <div class="header-more-panel">
-              <button id="open-investigations" type="button">切换调查</button>
-              <button id="reset-chat" type="button">新建调查</button>
+              <button id="open-investigations" type="button">Switch investigation</button>
+              <button id="reset-chat" type="button">New investigation</button>
             </div>
           </details>
         </div>
-        <button id="save-state" class="save-state" type="button" aria-live="polite">连接调查服务…</button>
-        <button id="resume-query" class="outline-button" type="button" hidden>恢复查询</button>
+        <button id="save-state" class="save-state" type="button" aria-live="polite">Connecting…</button>
+        <button id="resume-query" class="outline-button" type="button" hidden>Recover query</button>
         <button id="open-local" class="open-source" type="button">
           <img
             class="icon"
             src="/static/icons/folder-open.svg"
             alt=""
-          />上传视频
+          />Upload video
         </button>
         <a class="english-guide-link" href="/static/demo-guide-en.html" target="_blank" rel="noopener" aria-label="Open the English synthetic demo guide in a new tab">EN guide ↗</a>
         <details id="header-more" class="header-more">
-          <summary class="outline-button" aria-label="更多操作">更多 <span aria-hidden="true">⌄</span></summary>
+          <summary class="outline-button" aria-label="More actions">More <span aria-hidden="true">⌄</span></summary>
           <div class="header-more-panel">
-            <button id="open-agent-setup" type="button" disabled>模型与预算</button>
-            <button id="open-demos" type="button" disabled>演示库</button>
-            <a href="/docs" target="_blank" rel="noopener">API 文档 <span aria-hidden="true">↗</span></a>
+            <button id="open-agent-setup" type="button" disabled>Models and budget</button>
+            <button id="open-demos" type="button" disabled>Demo library</button>
+            <a href="/docs" target="_blank" rel="noopener">API docs <span aria-hidden="true">↗</span></a>
           </div>
         </details>
         <div id="workspace-chrome" hidden></div>
       </header>
-      <nav class="studio-rail" aria-label="工作区导航">
+      <nav class="studio-rail" aria-label="Workspace navigation">
         <button
           id="rail-canvas"
           class="rail-button active"
-          aria-label="回到调查画布"
+          aria-label="Go to canvas"
         >
           <img class="icon" src="/static/icons/chats-circle.svg" alt="" /><span
-            >画布</span
+            >Canvas</span
           >
         </button>
         <button
           id="rail-source"
           class="rail-button"
-          aria-label="收起视频面板"
+          aria-label="Collapse video panel"
           aria-controls="source-dock"
           aria-expanded="true"
-          title="收起视频面板"
+          title="Collapse video panel"
         >
           <img class="icon" src="/static/icons/folder-open.svg" alt="" /><span
-            >视频</span
+            >Video</span
           >
         </button>
         <button
           id="rail-findings"
           class="rail-button"
-          aria-label="查看已存发现"
+          aria-label="View saved findings"
           aria-controls="workbench-inspector"
         >
           <img class="icon" src="/static/icons/stack.svg" alt="" /><span
-            >已存发现</span
+            >Saved findings</span
           >
           <span id="rail-findings-count" class="rail-count" aria-hidden="true"
             >0</span
@@ -102,90 +110,90 @@
       <main
         id="chat-content"
         class="canvas-viewport"
-        aria-label="调查画布"
+        aria-label="Investigation canvas"
         tabindex="0"
       >
         <div id="conversation-root"></div>
         <canvas id="canvas-links" aria-hidden="true"></canvas>
         <div id="canvas-plane">
           <div id="finding-group-region" hidden>
-            <span id="finding-group-label">关键发现</span>
+            <span id="finding-group-label">Key findings</span>
           </div>
           <div id="messages"></div>
           <div id="board-artifacts"></div>
         </div>
         <div id="empty-state" class="empty-state">
           <div class="task-intro">
-            <span id="empty-eyebrow" class="eyebrow">已加载演示视频</span>
-            <h1>从一个问题，展开调查。</h1>
-            <p>找到的画面会留在这里。继续追问，把发现连起来。</p>
-            <div id="suggestions" class="suggestions" aria-label="演示问题">
-              <button data-query="center">
-                包裹何时在中央？<img
+            <span id="empty-eyebrow" class="eyebrow">Demo video loaded</span>
+            <h1>Start with a question.</h1>
+            <p>Review the footage and follow your questions.</p>
+            <div id="suggestions" class="suggestions" aria-label="Demo questions">
+              <button data-query="court">
+                Where is the ball handler in the court scene?<img
                   class="icon"
                   src="/static/icons/arrow-right.svg"
                   alt=""
                 />
               </button>
-              <button data-query="person">能确认搬运者吗？</button>
-              <button data-query="forklift">有叉车吗？</button>
+              <button data-query="pass">What is visible in the pass scene?</button>
+              <button data-query="shot">Where is the defender in the shot scene?</button>
             </div>
             <button id="demo-library-empty" class="text-button" disabled>
-              浏览 6 条评审演示 →
+              Explore the basketball demo →
             </button>
           </div>
         </div>
       </main>
-      <section class="canvas-topbar" aria-label="画布操作">
+      <section class="canvas-topbar" aria-label="Canvas actions">
         <div id="workspace-view-tabs"></div>
         <div class="canvas-actions">
-        <button id="rail-video" class="source-tile" aria-label="显示当前视频播放器" aria-controls="source-dock" title="显示当前视频播放器">
+        <button id="rail-video" class="source-tile" aria-label="Show video player" aria-controls="source-dock" title="Show video player">
           <img
             id="source-thumbnail"
-            src="/media/demo_parcel/frames/0.jpg"
-            alt="合成仓库视频"
+            src="/media/demo_basketball/frames/0.jpg"
+            alt="Synthetic basketball court"
           />
-          <span class="source-reveal-label">当前视频</span>
+          <span class="source-reveal-label">Current video</span>
           <span class="source-item"
-            ><strong id="attached-source-name">包裹移动 · 合成演示</strong
-            ><span id="attached-source-state">正在加载</span></span
+            ><strong id="attached-source-name">Basketball scenes · synthetic demo</strong
+            ><span id="attached-source-state">Loading</span></span
           >
           <img class="icon" src="/static/icons/play.svg" alt="" />
         </button>
 
-          <span id="board-label" class="board-label">调查画布</span>
-          <button id="canvas-search" class="outline-button" title="搜索画布（⌘ / Ctrl + K）">搜索</button>
+          <span id="board-label" class="board-label">Investigation canvas</span>
+          <button id="canvas-search" class="outline-button" title="Search canvas (⌘/Ctrl + K)">Search</button>
           <span id="demo-current" class="demo-current" hidden></span>
           <button id="expand-paths" class="outline-button" hidden>
-            展开全部
+            Expand all
           </button>
-          <label class="sr-only" for="arrange-mode">自动整理方式</label>
+          <label class="sr-only" for="arrange-mode">Arrange by</label>
           <select id="arrange-mode">
-            <option value="threads">追问关系</option>
-            <option value="spread">横向展开</option>
-            <option value="workspace">按对象分组</option>
-            <option value="time">视频时间</option>
-            <option value="status">结果状态</option>
+            <option value="threads">Follow-up connections</option>
+            <option value="spread">Spread horizontally</option>
+            <option value="workspace">Group by type</option>
+            <option value="time">Video time</option>
+            <option value="status">Result status</option>
           </select>
-          <button id="arrange-canvas" class="outline-button">整理</button>
+          <button id="arrange-canvas" class="outline-button">Arrange</button>
           <button
             id="toggle-inspector"
             class="outline-button"
-            aria-label="切换调查检查器"
+            aria-label="Toggle investigation inspector"
             aria-expanded="true"
           >
-            检查器
+            Inspector
           </button>
 
         </div>
       </section>
-      <section id="source-dock" class="source-dock" aria-label="视频与调查脉络">
+      <section id="source-dock" class="source-dock" aria-label="Video and investigation">
         <div class="source-dock-heading">
-          <span>素材 / 01</span
+          <span>Source / 01</span
           ><button
             id="collapse-source"
             class="icon-button"
-            aria-label="收起素材面板"
+            aria-label="Collapse video panel"
           >
             <img class="icon" src="/static/icons/x.svg" alt="" />
           </button>
@@ -196,11 +204,11 @@
           aria-labelledby="evidence-question"
         >
           <header class="viewer-heading">
-            <h2 id="evidence-question">素材预览</h2>
+            <h2 id="evidence-question">Video preview</h2>
             <button
               id="toggle-evidence"
               class="icon-button"
-              aria-label="关闭证据播放器"
+              aria-label="Close evidence player"
               aria-expanded="false"
               aria-controls="evidence-canvas"
             >
@@ -208,15 +216,15 @@
             </button>
           </header>
           <div id="source-picker-root"></div>
-          <button id="open-sources" type="button" hidden>管理视频</button>
-          <select id="source-switcher" class="source-switcher" aria-label="切换当前视频" hidden disabled>
-            <option value="demo_parcel">箱子 · 包裹移动（合成演示）</option>
+          <button id="open-sources" type="button" hidden>Manage videos</button>
+          <select id="source-switcher" class="source-switcher" aria-label="Switch video" hidden disabled>
+            <option value="demo_basketball">Basketball scenes (synthetic demo)</option>
           </select>
           <div class="viewer-source">
-            <span id="video-heading" hidden>包裹移动 · 合成演示</span
-            ><span id="video-state">演示素材</span>
-            <span id="composer-mode-text" class="video-analysis-mode">预设演示 · 未调用模型</span>
-            <button id="knowledge-control" class="text-button" type="button" hidden>建立基础索引</button>
+            <span id="video-heading" hidden>Basketball scenes · synthetic demo</span
+            ><span id="video-state">Demo source</span>
+            <span id="composer-mode-text" class="video-analysis-mode">Preset demo · no model calls</span>
+            <button id="knowledge-control" class="text-button" type="button" hidden>Build index</button>
           </div>
           <div class="player-wrap">
             <video
@@ -224,19 +232,19 @@
               controls
               playsinline
               preload="auto"
-              poster="/media/demo_parcel/frames/0.jpg"
-              aria-label="当前视频播放器"
+              poster="/media/demo_basketball/frames/0.jpg"
+              aria-label="Video player"
             >
-              <source src="/demo/video" type="video/mp4" /></video
-            ><span id="video-watermark">合成演示</span>
+              <source src="/demo/video?video_id=demo_basketball" type="video/mp4" /></video
+            ><span id="video-watermark">Synthetic demo</span>
           </div>
           <div class="player-footer">
-            <span id="seek-status">选择证据，回看对应画面</span
+            <span id="seek-status">Select evidence to replay the source</span
             ><button id="reload-video" class="text-button" hidden>
-              重新加载视频
+              Reload video
             </button>
           </div>
-          <p id="video-meta">18 秒 · 1600 × 900 · 无音轨</p>
+          <p id="video-meta">18 seconds · 1600 × 900 · No audio track</p>
           <div id="demo-timeline" class="timeline-section">
             <span id="playback-time">00:00 / 00:18</span>
             <div class="timeline">
@@ -244,68 +252,65 @@
               <button
                 class="chapter"
                 data-time="0"
-                aria-label="定位左侧片段 00:00"
+                aria-label="Court scene at 00:00"
               >
-                左侧</button
+                Court</button
               ><button
                 class="chapter"
                 data-time="5"
-                aria-label="定位中央片段 00:05"
+                aria-label="Pass scene at 00:05"
               >
-                中央</button
+                Pass</button
               ><button
                 class="chapter"
                 data-time="11"
-                aria-label="定位右侧片段 00:11"
+                aria-label="Shot scene at 00:11"
               >
-                右侧
+                Shot
               </button>
             </div>
           </div>
           <p id="local-note" class="local-note" hidden>
-            文件仅在浏览器播放。尚未上传、建立索引或交给模型。
+            Files are only played in the browser. It has not been uploaded, indexed, or handed to a model.
           </p>
           <button id="restore-demo" class="restore-button" hidden>
-            返回演示，体验证据检索
+            Return to the demo to experience evidence retrieval
           </button>
           <details class="demo-details">
-            <summary>演示说明与结果来源</summary>
+            <summary>Demonstration description and source of results</summary>
             <p id="demo-notice-text">
-              合成素材与预设回答。支持固定的上下文追问，不上传文件，不调用模型。
+              Synthetic basketball demo · Preset answers · No model calls. Generated stills do not establish continuous play, player identity, or whether the shot scores.
             </p>
-            <button data-query="failure" class="text-button">
-              查看失败样例
-            </button>
           </details>
-          <div class="source-filmstrip" aria-label="素材关键帧">
+          <div class="source-filmstrip" aria-label="Source frames">
             <button
               class="segment"
               data-time="0"
-              aria-label="回看素材左侧 00:00"
+              aria-label="Replay court scene at 00:00"
             >
               <img
-                src="/media/demo_parcel/frames/0.jpg"
-                alt="包裹位于左侧"
+                src="/media/demo_basketball/frames/0.jpg"
+                alt="Synthetic court scene"
               /><span>00:00</span>
             </button>
             <button
               class="segment"
               data-time="6"
-              aria-label="回看素材中央 00:06"
+              aria-label="Replay pass scene at 00:06"
             >
               <img
-                src="/media/demo_parcel/frames/6.jpg"
-                alt="包裹位于中央"
+                src="/media/demo_basketball/frames/6.jpg"
+                alt="Synthetic pass scene"
               /><span>00:06</span>
             </button>
             <button
               class="segment"
               data-time="13"
-              aria-label="回看素材右侧 00:13"
+              aria-label="Replay shot scene at 00:13"
             >
               <img
-                src="/media/demo_parcel/frames/13.jpg"
-                alt="包裹位于右侧"
+                src="/media/demo_basketball/frames/13.jpg"
+                alt="Synthetic shot scene"
               /><span>00:13</span>
             </button>
           </div>
@@ -315,35 +320,35 @@
       <aside
         id="workbench-inspector"
         class="workbench-inspector"
-        aria-label="调查检查器"
+        aria-label="Investigation inspector"
       ></aside>
-      <section class="composer-area" aria-label="与 FrameSeek 对话">
+      <section class="composer-area" aria-label="Ask FrameSeek">
         <p id="form-notice" class="form-notice" role="status" hidden></p>
         <form id="question-form">
           <div id="conversation-context-chip" hidden></div>
           <div class="composer-context">
-            <label id="composer-label" for="question">向 FrameSeek 提问</label
+            <label id="composer-label" for="question">Ask FrameSeek</label
             ><button
               id="clear-context"
               class="text-button"
               type="button"
               hidden
             >
-              另起问题
+              New question
             </button>
           </div>
           <textarea
             id="question"
             rows="2"
             maxlength="1000"
-            placeholder="继续问这个视频…"
+            placeholder="Ask a question about this video…"
           ></textarea>
           <div class="composer-tools">
             <button
               id="attach-local"
               class="icon-button"
               type="button"
-              aria-label="打开本地视频文件"
+              aria-label="Open a local video"
             >
               <img
                 class="icon"
@@ -351,27 +356,27 @@
                 alt=""
               /></button>
             <div class="composer-secondary">
-              <span id="auto-engine-indicator" class="auto-engine-indicator">自动</span>
-              <details id="reading-tools" class="reading-tools"><summary aria-label="更多提问工具"><img class="icon" src="/static/icons/list.svg" alt=""/><span class="sr-only">更多</span></summary><div class="reading-tools-panel"><details id="engine-settings"><summary>高级设置</summary><div class="engine-settings-panel"><p>通常由 Agent 自动选择。需要时可手动指定处理方式，预算检查始终生效。</p>              <label class="index-engine-label" for="chat-engine">
-                <span class="sr-only">提问方式</span>
-                <select id="chat-engine" aria-label="提问方式" title="索引检索不调用模型；模型分析需通过预算检查"><option value="auto" selected>自动选择</option><option value="index">索引 · 零模型</option><option id="local-engine-option" value="local" hidden disabled>本机视觉 · 免费</option><option id="cloud-engine-option" value="cloud" hidden disabled>云端视觉 · Token Factory</option><option value="model">模型分析</option></select>
+              <span id="auto-engine-indicator" class="auto-engine-indicator">Auto</span>
+              <details id="reading-tools" class="reading-tools"><summary aria-label="More question tools"><img class="icon" src="/static/icons/list.svg" alt=""/><span class="sr-only">More</span></summary><div class="reading-tools-panel"><details id="engine-settings"><summary>Advanced settings</summary><div class="engine-settings-panel"><p>Usually automatically selected by the Agent. The processing method can be specified manually when needed, and the budget check is always in effect.</p>              <label class="index-engine-label" for="chat-engine">
+                <span class="sr-only">Query mode</span>
+                <select id="chat-engine" aria-label="Query mode" title="Index retrieval does not call the model; model analysis needs to pass the budget check"><option value="auto" selected>Automatic</option><option value="index">Index · no model calls</option><option id="local-engine-option" value="local" hidden disabled>Local vision · free</option><option id="cloud-engine-option" value="cloud" hidden disabled>Cloud vision · Token Factory</option><option value="model">Model analysis</option></select>
               </label>
 </div></details>
-              <button id="search-index" class="composer-tool-button" type="button" title="打开已有索引的时间线，不调用模型" hidden>时间线</button>
+              <button id="search-index" class="composer-tool-button" type="button" title="Open an indexed timeline without calling the model" hidden>Timeline</button>
               <div id="composer-suggestions"></div>
               <details class="composer-info composer-popup" name="composer-popover">
-                <summary>说明</summary>
-                <div class="composer-info-panel"><strong>检索与预算</strong><p>索引模式读取已有分析，不会重新识别视频。模型分析须通过现有预算检查。</p><p id="chat-budget-status" role="status" hidden></p></div>
+                <summary>Details</summary>
+                <div class="composer-info-panel"><strong>Search and Budget</strong><p>Index mode reads existing analysis and does not re-identify videos. Model analysis is subject to existing budget checks.</p><p id="chat-budget-status" role="status" hidden></p></div>
               </details>
               </div></details>
             </div>
-            <button id="cancel-question" class="composer-tool-button" type="button" hidden>停止处理</button>
-            <span class="composer-keyhint" title="Enter 发送，Shift + Enter 换行">Enter 发送</span
+            <button id="cancel-question" class="composer-tool-button" type="button" hidden>Stop</button>
+            <span class="composer-keyhint" title="Enter to send, Shift + Enter to wrap">Enter to send</span
             ><button
               id="send-question"
               class="send-button"
               type="submit"
-              aria-label="发送消息"
+              aria-label="Send message"
               disabled
             >
               <img class="icon" src="/static/icons/arrow-right.svg" alt="" />
@@ -380,87 +385,87 @@
         </form>
       </section>
       <dialog id="question-feedback-dialog" class="question-feedback-dialog" aria-labelledby="question-feedback-title" aria-describedby="question-feedback-message">
-        <h2 id="question-feedback-title">问题已收到，需要调整后再发送</h2>
+        <h2 id="question-feedback-title">The problem has been received and needs to be adjusted before sending.</h2>
         <p id="question-feedback-message"></p>
-        <p class="question-feedback-note">原问题已保留；不会自动重复发送。</p>
-        <button id="question-feedback-edit" type="button" class="outline-button" autofocus>返回编辑问题</button>
+        <p class="question-feedback-note">The original question has been retained; it will not be automatically resent.</p>
+        <button id="question-feedback-edit" type="button" class="outline-button" autofocus>Return to edit question</button>
       </dialog>
       <dialog id="visual-search-dialog" aria-labelledby="visual-search-title">
-        <header><h2 id="visual-search-title">视频索引与出现时间</h2><button id="close-visual-search" type="button">关闭</button></header>
+        <header><h2 id="visual-search-title">Video index and appearance time</h2><button id="close-visual-search" type="button">Close</button></header>
         <p id="visual-search-summary" role="status"></p>
         <p id="visual-search-conditions"></p>
         <div id="visual-search-coverage" role="note"></div>
-        <div id="visual-search-track" aria-label="出现区间时间线" hidden></div>
-        <details id="visual-search-filters"><summary>明确检索条件 · 同一物体须全部满足</summary><div id="visual-search-options"></div><button id="visual-search-apply" type="button">按已选条件检索</button></details>
+        <div id="visual-search-track" aria-label="Appearance timeline" hidden></div>
+        <details id="visual-search-filters"><summary>Clear search conditions · The same object must meet all</summary><div id="visual-search-options"></div><button id="visual-search-apply" type="button">Search by selected criteria</button></details>
         <div id="visual-search-results"></div>
       </dialog>
-      <section class="canvas-footer" aria-label="画布视图">
+      <section class="canvas-footer" aria-label="Canvas view">
         <div class="canvas-navigation">
           <section
             id="canvas-minimap"
             class="empty"
-            aria-label="画布导航小地图"
+            aria-label="Canvas navigation minimap"
           >
             <div class="minimap-heading">
-              <span>全局导航</span><span id="canvas-node-count">0 个对象</span>
+              <span>global navigation</span><span id="canvas-node-count">0 objects</span>
             </div>
-            <div id="minimap-content" role="group" aria-label="点击对象定位">
+            <div id="minimap-content" role="group" aria-label="Click object positioning">
               <div id="minimap-window" aria-hidden="true"></div>
             </div>
-            <p>点击定位 · 橙色为当前选中</p>
+            <p>Click to locate ·Orange is currently selected</p>
           </section>
-          <p id="canvas-hint">拖动空白平移 · ⌘ / Ctrl + 滚轮缩放</p>
+          <p id="canvas-hint">Drag blank pan · ⌘ / Ctrl + wheel zoom</p>
         </div>
         <div class="view-controls">
-          <button id="canvas-undo" disabled title="撤销画布操作（⌘ / Ctrl + Z）">撤销</button>
-          <button id="canvas-redo" disabled title="重做画布操作（⌘ / Ctrl + Shift + Z）">重做</button>
-          <button id="canvas-shortcuts" title="画布快捷键">快捷键</button>
+          <button id="canvas-undo" disabled title="Undo canvas operation (⌘/Ctrl + Z)">Undo</button>
+          <button id="canvas-redo" disabled title="Redo canvas operations (⌘/Ctrl+Shift+Z)">Redo</button>
+          <button id="canvas-shortcuts" title="Canvas keyboard shortcuts">Shortcuts</button>
           <button
             id="toggle-minimap"
-            aria-label="切换画布小地图"
+            aria-label="Switch canvas minimap"
             aria-expanded="true"
             aria-controls="canvas-minimap"
           >
-            导航
+            Navigation
           </button>
-          <button id="focus-card" disabled title="聚焦当前对象（画布内按 F）">
-            聚焦选中
+          <button id="focus-card" disabled title="Focus on the current object (press F within the canvas)">
+            Focus selection
           </button>
-          <button id="zoom-out" aria-label="缩小画布">−</button
-          ><button id="zoom-reset" aria-label="恢复百分之百缩放">100%</button
-          ><button id="zoom-in" aria-label="放大画布">
+          <button id="zoom-out" aria-label="Zoom out">−</button
+          ><button id="zoom-reset" aria-label="Restore 100% zoom">100%</button
+          ><button id="zoom-in" aria-label="Zoom in">
             <img class="icon" src="/static/icons/plus.svg" alt="" /></button
-          ><button id="fit-canvas">适应视图</button>
+          ><button id="fit-canvas">Fit to view</button>
         </div>
       </section>
       <details class="conversation-history">
-        <summary>本次调查 <span id="task-count">0</span> 轮</summary>
-        <p id="history-empty">提问后可在这里切换轮次</p>
-        <nav id="task-list" aria-label="本次会话任务"></nav>
-        <span>最近 12 轮 · 本次页面会话</span>
+        <summary>This investigation <span id="task-count">0</span> turns</summary>
+        <p id="history-empty">You can switch rounds here after asking a question</p>
+        <nav id="task-list" aria-label="This session"></nav>
+        <span>Last 12 rounds · Sessions on this page</span>
       </details>
-      <div id="canvas-selection-tools" class="canvas-selection-tools" hidden role="group" aria-label="多选对象操作">
+      <div id="canvas-selection-tools" class="canvas-selection-tools" hidden role="group" aria-label="Multiple selection actions">
         <span id="canvas-selection-count"></span>
-        <button id="canvas-group">命名分组</button><button id="canvas-ungroup">取消分组</button>
-        <label class="sr-only" for="canvas-alignment">对齐方式</label>
-        <select id="canvas-alignment"><option value="left">左侧对齐</option><option value="top">顶部对齐</option><option value="horizontal">横向等距</option><option value="vertical">纵向等距</option></select>
-        <button id="canvas-align">对齐</button><button id="canvas-clear-selection">取消多选</button>
+        <button id="canvas-group">Named group</button><button id="canvas-ungroup">Ungroup</button>
+        <label class="sr-only" for="canvas-alignment">Alignment</label>
+        <select id="canvas-alignment"><option value="left">Align left</option><option value="top">Align top</option><option value="horizontal">Distribute horizontally</option><option value="vertical">Distribute vertically</option></select>
+        <button id="canvas-align">Align</button><button id="canvas-clear-selection">Clear selection</button>
       </div>
       <dialog id="canvas-group-dialog" class="branch-name-dialog" aria-labelledby="canvas-group-title">
-        <form id="canvas-group-form"><h2 id="canvas-group-title">命名对象分组</h2><p>分组只整理画布，追问关系和证据来源保持原样。</p>
-          <label for="canvas-group-name">分组名称</label><input id="canvas-group-name" maxlength="60" required autocomplete="off" />
-          <div class="branch-name-actions"><button type="button" id="canvas-group-cancel" class="outline-button">取消</button><button type="submit" class="branch-save">建立分组</button></div>
+        <form id="canvas-group-form"><h2 id="canvas-group-title">Named object grouping</h2><p>Grouping only tidies the canvas, leaving questioning relationships and sources of evidence intact.</p>
+          <label for="canvas-group-name">Group name</label><input id="canvas-group-name" maxlength="60" required autocomplete="off" />
+          <div class="branch-name-actions"><button type="button" id="canvas-group-cancel" class="outline-button">Cancel</button><button type="submit" class="branch-save">Create group</button></div>
         </form>
       </dialog>
       <dialog id="canvas-search-dialog" class="canvas-search-dialog compare-dialog" aria-labelledby="canvas-search-title">
-        <header><h2 id="canvas-search-title">搜索当前调查</h2><button id="canvas-search-close" class="icon-button" aria-label="关闭搜索">×</button></header>
-        <label class="sr-only" for="canvas-search-input">搜索问题、答案、证据或分组</label><input id="canvas-search-input" placeholder="搜索问题、答案、证据或分组…" autocomplete="off" />
+        <header><h2 id="canvas-search-title">Search this investigation</h2><button id="canvas-search-close" class="icon-button" aria-label="Close search">×</button></header>
+        <label class="sr-only" for="canvas-search-input">Search questions, answers, evidence, or groups</label><input id="canvas-search-input" placeholder="Search questions, answers, evidence or groups…" autocomplete="off" />
         <p id="canvas-search-status" role="status"></p><div id="canvas-search-results" class="canvas-search-results"></div>
       </dialog>
       <dialog id="canvas-shortcuts-dialog" class="canvas-search-dialog compare-dialog" aria-labelledby="canvas-shortcuts-title">
-        <header><h2 id="canvas-shortcuts-title">画布快捷键</h2><button id="canvas-shortcuts-close" class="icon-button" aria-label="关闭快捷键">×</button></header>
-        <dl class="shortcut-list"><dt>搜索当前调查</dt><dd>⌘ / Ctrl + K</dd><dt>多选对象</dt><dd>Shift + 点击卡片的选中按钮</dd><dt>批量移动</dt><dd>拖动任一已选卡片的标题</dd><dt>撤销 / 重做</dt><dd>⌘ / Ctrl + Z / Shift + Z</dd><dt>全选 / 取消多选</dt><dd>画布内 ⌘ / Ctrl + A / Esc</dd><dt>移动卡片</dt><dd>标题聚焦时方向键 · Shift 加速</dd><dt>聚焦 / 全局视图</dt><dd>画布内 F / Home</dd><dt>平移 / 缩放</dt><dd>拖动空白 / ⌘ + 滚轮</dd></dl>
-        <p class="muted-text">撤销仅作用于本次会话的画布位置、分组和路径整理。刷新后布局仍保留，撤销历史重新开始。</p>
+        <header><h2 id="canvas-shortcuts-title">Canvas keyboard shortcuts</h2><button id="canvas-shortcuts-close" class="icon-button" aria-label="Close keyboard shortcuts">×</button></header>
+        <dl class="shortcut-list"><dt>Search this investigation</dt><dd>⌘ / Ctrl + K</dd><dt>Select multiple objects</dt><dd>Shift + click the card’s check button</dd><dt>Batch move</dt><dd>Drag the title of any selected card</dd><dt>Undo / redo</dt><dd>⌘ / Ctrl + Z / Shift + Z</dd><dt>Select all / clear selection</dt><dd>Within canvas ⌘ / Ctrl + A / Esc</dd><dt>move card</dt><dd>Arrow keys · Shift acceleration when title is focused</dd><dt>Focus/Global view</dt><dd>Within canvas F/Home</dd><dt>Pan/Zoom</dt><dd>Drag blank / ⌘ + scroll wheel</dd></dl>
+        <p class="muted-text">Undo only affects canvas positioning, grouping, and routing for this session. The layout is retained after refreshing and the undo history starts over.</p>
       </dialog>
       <input id="file-input" type="file" accept="video/*" hidden />
       <dialog
@@ -469,9 +474,9 @@
         aria-labelledby="branch-name-title"
       >
         <form id="branch-name-form">
-          <h2 id="branch-name-title">命名调查路径</h2>
+          <h2 id="branch-name-title">Name the investigation path</h2>
           <p id="branch-name-source"></p>
-          <label for="branch-name-input">路径名称</label>
+          <label for="branch-name-input">Path name</label>
           <input
             id="branch-name-input"
             maxlength="60"
@@ -479,7 +484,7 @@
             autocomplete="off"
           />
           <p class="branch-name-note">
-            名称用于整理画布，原始问题与证据保持不变。随当前调查保存在本地。
+            Names are used to organize the canvas, and the original questions and evidence remain unchanged. Saved locally with the current investigation.
           </p>
           <div class="branch-name-actions">
             <button
@@ -487,16 +492,16 @@
               type="button"
               class="outline-button"
             >
-              取消
+              Cancel
             </button>
-            <button type="submit" class="branch-save">保存名称</button>
+            <button type="submit" class="branch-save">Save name</button>
           </div>
         </form>
       </dialog>
       <div hidden>
-        <button id="mobile-reset">新对话</button
-        ><span id="mode-label">演示模式</span>
-        <h2 id="frame-heading">素材关键帧</h2>
+        <button id="mobile-reset">New conversation</button
+        ><span id="mode-label">Demo mode</span>
+        <h2 id="frame-heading">Source frames</h2>
         <div id="segments"></div>
         <div class="run-context">
           <span id="run-state"></span>
@@ -518,35 +523,34 @@
     <dialog id="demo-library" aria-labelledby="demo-library-title">
       <header class="demo-library-heading">
         <div>
-          <span class="eyebrow">FrameSeek / 演示库</span>
-          <h2 id="demo-library-title">选择一条调查路径</h2>
+          <span class="eyebrow">FrameSeek / Demo Library</span>
+          <h2 id="demo-library-title">Choose an investigation path</h2>
         </div>
-        <button id="close-demos" class="icon-button" aria-label="关闭演示库">
+        <button id="close-demos" class="icon-button" aria-label="Close demo library">
           <img class="icon" src="/static/icons/x.svg" alt="" />
         </button>
       </header>
       <p class="demo-library-intro">
-        六种调查方式，从三轮对话开始。载入后可以回看证据、整理画布，或选中任意卡片继续追问。
+        Six investigation methods, starting with three rounds of dialogue. After loading, you can review the evidence, organize the canvas, or select any card to continue questioning.
       </p>
       <div id="demo-scenarios" class="demo-scenarios"></div>
       <p class="demo-library-note">
-        载入会替换当前画布。所有路径使用同一段 18
-        秒合成视频与预设回答，不调用模型。
+        Loading replaces the current canvas. All paths use the same 18-second synthetic video and preset answers; no model calls are made.
       </p>
     </dialog>
     <dialog id="workspace-library" class="workspace-library">
-      <header><div><span class="eyebrow">FRAMESEEK / WORKSPACE</span><h2 id="library-title">调查库</h2></div><button id="close-library" class="icon-button" aria-label="关闭调查与素材库">×</button></header>
-      <p id="library-intro"></p><div class="library-toolbar"><button id="library-add" class="outline-button">新建调查</button><button id="library-refresh" class="text-button">刷新列表</button></div>
+      <header><div><span class="eyebrow">FRAMESEEK / WORKSPACE</span><h2 id="library-title">Investigations</h2></div><button id="close-library" class="icon-button" aria-label="Close investigations and media library">×</button></header>
+      <p id="library-intro"></p><div class="library-toolbar"><button id="library-add" class="outline-button">New investigation</button><button id="library-refresh" class="text-button">Refresh list</button></div>
       <div id="library-items" class="library-items"></div><p id="library-notice" role="status"></p>
     </dialog>
-    <dialog id="rename-source-dialog" class="delete-dialog"><h2>重命名素材</h2><form id="rename-source-form"><label for="rename-source-input">素材名称</label><input id="rename-source-input" required maxlength="180"><div class="library-toolbar"><button id="rename-source-cancel" type="button" class="outline-button">取消</button><button type="submit" class="outline-button">保存名称</button></div></form></dialog>
+    <dialog id="rename-source-dialog" class="delete-dialog"><h2>Rename footage</h2><form id="rename-source-form"><label for="rename-source-input">Video name</label><input id="rename-source-input" required maxlength="180"><div class="library-toolbar"><button id="rename-source-cancel" type="button" class="outline-button">Cancel</button><button type="submit" class="outline-button">Save name</button></div></form></dialog>
     <dialog id="delete-turn-dialog" class="delete-dialog" aria-labelledby="delete-turn-title" aria-describedby="delete-turn-description delete-turn-question">
-      <h2 id="delete-turn-title">删除这个问题？</h2>
+      <h2 id="delete-turn-title">Delete this question?</h2>
       <p id="delete-turn-question" class="delete-turn-question"></p>
-      <p id="delete-turn-description">问题会从画布中移除，可在左侧「已删除的问题」里恢复。视频、其他聊天和已保存证据都会保留。</p>
-      <div><button id="delete-turn-cancel" type="button" class="outline-button" autofocus>取消</button><button id="delete-turn-confirm" type="button" class="outline-button danger">确认删除</button></div>
+      <p id="delete-turn-description">The question will be removed from the canvas and can be restored in "Deleted Questions" on the left. Videos, other chats, and saved evidence are preserved.</p>
+      <div><button id="delete-turn-cancel" type="button" class="outline-button" autofocus>Cancel</button><button id="delete-turn-confirm" type="button" class="outline-button danger">Confirm deletion</button></div>
     </dialog>
-    <dialog id="delete-dialog" class="delete-dialog"><h2>确认删除</h2><p id="delete-description"></p><div><button id="delete-cancel" class="outline-button">保留</button><button id="delete-confirm" class="outline-button danger">删除</button></div></dialog>
+    <dialog id="delete-dialog" class="delete-dialog"><h2>Confirm deletion</h2><p id="delete-description"></p><div><button id="delete-cancel" class="outline-button">Keep</button><button id="delete-confirm" class="outline-button danger">Delete</button></div></dialog>
     <div
       id="announcement"
       class="sr-only"
@@ -554,20 +558,20 @@
       aria-live="polite"
     ></div>
     <dialog id="agent-setup-dialog" class="agent-setup-dialog" aria-labelledby="agent-setup-title">
-      <header><div><p class="inspector-kicker">FRAMESEEK / AGENT</p><h2 id="agent-setup-title">模型与预算</h2></div>
-        <button id="close-agent-setup" class="icon-button" type="button" aria-label="关闭模型与预算">×</button></header>
-      <p id="agent-setup-summary" role="status">正在读取本机配置…</p>
+      <header><div><p class="inspector-kicker">FRAMESEEK / AGENT</p><h2 id="agent-setup-title">Models and budget</h2></div>
+        <button id="close-agent-setup" class="icon-button" type="button" aria-label="Close model and budget">×</button></header>
+      <p id="agent-setup-summary" role="status">Reading local configuration...</p>
       <div id="agent-readiness-checks" class="agent-readiness-checks"></div>
-      <details><summary>模型角色与版本</summary><div id="agent-model-roles"></div></details>
-      <details><summary>如何准备真实分析</summary>
-        <ol><li>选择 NVIDIA/Nebius 的 <code>docs/runtime.example.json</code> 或 Gemini 的 <code>docs/runtime.gemini.example.json</code>，准备本机私有配置；模板中的占位值不可运行。</li>
-          <li>NVIDIA/Nebius 路线使用自托管媒体模型和 Nebius 文本服务；Gemini 路线需明确允许将抽样画面发送到 Google。凭据只放服务端环境变量。</li>
-          <li>明确有限金额和调用次数，完成费用及资源截止校准，再由本机操作者记录两级批准预算。</li>
-          <li>设置 <code>FS_RUNTIME_FILE</code> 和 <code>FRAMESEEK_MODE=real</code>，重启服务后重新检查。素材库会按实际窗口数再做准入。</li></ol>
-        <p>只读检查命令：<code>uv run --frozen python -m frameseek.readiness</code>。预算检查可附带已存在的 <code>--owner</code>，这不是批准费用。</p>
+      <details><summary>Model roles and versions</summary><div id="agent-model-roles"></div></details>
+      <details><summary>How to Prepare for Real Analysis</summary>
+        <ol><li>Choose NVIDIA/Nebius <code>docs/runtime.example.json</code> or Gemini's <code>docs/runtime.gemini.example.json</code>, prepare local private configuration; placeholder values ​​in the template cannot be run.</li>
+          <li>The NVIDIA/Nebius route uses a self-hosted media model and the Nebius text service; the Gemini route requires explicit permission to send samples to Google. Credentials are only placed in server environment variables.</li>
+          <li>The limited amount and number of calls are clarified, the cost and resource cutoff calibration are completed, and then the local operator records the two-level approved budget.</li>
+          <li>Settings <code>FS_RUNTIME_FILE</code> and <code>FRAMESEEK_MODE=real</code>, check again after restarting the service. The material library will make admission based on the actual number of windows.</li></ol>
+        <p>Read-only check command:<code>uv run --frozen python -m frameseek.readiness</code>. Budget checks can be appended to existing <code>--owner</code>, this does not approve spending.</p>
       </details>
-      <footer><button id="refresh-agent-setup" class="outline-button" type="button">重新检查</button>
-        <span class="muted-text">检查不会调用模型、创建 GPU 或批准费用。</span></footer>
+      <footer><button id="refresh-agent-setup" class="outline-button" type="button">Check again</button>
+        <span class="muted-text">This check does not call a model, create a GPU, or approve spending.</span></footer>
     </dialog>
   </body>
 </html>

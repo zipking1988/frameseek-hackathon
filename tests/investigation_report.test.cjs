@@ -9,35 +9,35 @@ test('reports retain orphaned pin origins, context, exact timestamps and a froze
  const result=report.create(state,'2026-10-05');state.note='新笔记';q.response.answer='新答案';
  assert.equal(result.questions.length,2);assert.equal(result.questions[1].retained_by_finding,true);assert.equal(result.questions[0].parent_turn_id,'turn-1');
  assert.equal(result.evidence[0].t,6.125);assert.equal(result.note,'待核实');assert.ok(!JSON.stringify(result).includes('未发送私有草稿'));
- assert.match(report.markdown(result),/连续移动未确认/);assert.match(report.markdown(result),/no_result/);assert.match(report.markdown(result),/未调用模型/);
+ assert.match(report.markdown(result),/连续移动未确认/);assert.match(report.markdown(result),/no_result/);assert.match(report.markdown(result),/No model calls/);
 });
 test('HTML escapes every text field and embeds only inert raster data URLs',()=>{
  const q=query('q1');q.question='<script>alert(1)</script>';q.response.answer='</p><img src=x onerror=evil()>';
  const result=report.create({title:'</title><script>evil()</script>',note:'<iframe src=https://evil.test>',records:[{id:'t1',query:q}],pins:[]});
  const html=report.html(result,{E1:'https://evil.test/image'});
- assert.ok(!html.includes('<script>'));assert.ok(!html.includes('<iframe'));assert.ok(!html.includes('src="https://'));assert.match(html,/&lt;script&gt;/);assert.match(html,/default-src 'none'/);assert.match(html,/0\/1 张已嵌入/);
- assert.match(report.html(result,{E1:'data:image/png;base64,aGVsbG8='}),/1\/1 张已嵌入/);
+ assert.ok(!html.includes('<script>'));assert.ok(!html.includes('<iframe'));assert.ok(!html.includes('src="https://'));assert.match(html,/&lt;script&gt;/);assert.match(html,/default-src 'none'/);assert.match(html,/0\/1 embedded/);
+ assert.match(report.html(result,{E1:'data:image/png;base64,aGVsbG8='}),/1\/1 embedded/);
  assert.ok(!report.html(result,{E1:'data:image/svg+xml;base64,aGVsbG8='}).includes('<img src='));
 });
 test('reports reject cross-source evidence, nonfinite time, external and traversal media references',()=>{
- const q=query('q1');q.response.events[0].video_id='other';assert.throws(()=>report.create({records:[{query:q}]}),/其他素材/);
- q.response.events[0].video_id='demo_parcel';q.response.events[0].evidence[0].uri='https://evil.test';assert.throws(()=>report.create({records:[{query:q}]}),/引用无效/);
+ const q=query('q1');q.response.events[0].video_id='other';assert.throws(()=>report.create({records:[{query:q}]}),/another source/);
+ q.response.events[0].video_id='demo_parcel';q.response.events[0].evidence[0].uri='https://evil.test';assert.throws(()=>report.create({records:[{query:q}]}),/Invalid evidence reference/);
  assert.equal(report.safeFrameUri('demo_parcel','/media/demo_parcel/frames/../x.jpg'),false);
  assert.equal(report.safeFrameUri('other','/media/demo_parcel/frames/x.jpg'),false);
- q.response.events[0].evidence[0].uri=frame.uri;q.response.events[0].evidence[0].t=NaN;assert.throws(()=>report.create({records:[{query:q}]}),/引用无效/);
+ q.response.events[0].evidence[0].uri=frame.uri;q.response.events[0].evidence[0].t=NaN;assert.throws(()=>report.create({records:[{query:q}]}),/Invalid evidence reference/);
 });
 test('real and unindexed sources have distinct provenance, errors survive exports, repeated frames deduplicate',()=>{
  const q=query('q1'),q2=query('q2');q2.response.status='error';q2.response.errors=[{code:'timeout',message:'后续处理超时'}];
  const saved=report.create({records:[{id:'t1',query:q},{id:'t2',query:q2}],pins:[]});assert.equal(saved.evidence.length,1);assert.deepEqual(saved.evidence[0].query_ids,['q1','q2']);assert.match(report.html(saved),/后续处理超时/);
- const real=report.create({sourceInfo:{id:'real_a',name:'实际录像',metadata:{duration:100}},records:[],pins:[]});assert.match(report.provenance(real),/真实素材/);
- assert.match(report.provenance(report.create({local:true,records:[],pins:[]})),/不作分析结论/);
+ const real=report.create({sourceInfo:{id:'real_a',name:'实际录像',metadata:{duration:100}},records:[],pins:[]});assert.match(report.provenance(real),/Uploaded source/);
+ assert.match(report.provenance(report.create({local:true,records:[],pins:[]})),/No analysis conclusions/);
 });
 
 test('repeated fixture request IDs retain every conversation turn and its pin origin',()=>{
  const q=query('center'),q2=query('center');q2.parentTurn='t1';q2.response.answer='第二轮不同答案';
  const state={records:[{id:'t1',query:q},{id:'t2',query:q2}],pins:[{id:'p1',kind:'conclusion',turnId:'t1',query:q,title:'第一轮'}]};
  const result=report.create(state);assert.equal(result.questions.length,2);assert.equal(result.questions[1].parent_turn_id,'t1');
- assert.deepEqual(result.evidence[0].turn_ids,['t1','t2']);assert.match(report.markdown(result),/第二轮不同答案/);assert.match(report.markdown(result),/来源问题：在哪里？/);
+ assert.deepEqual(result.evidence[0].turn_ids,['t1','t2']);assert.match(report.markdown(result),/第二轮不同答案/);assert.match(report.markdown(result),/Source question: 在哪里？/);
  assert.match(report.html(result),/第一轮/);assert.match(report.html(result),/第二轮不同答案/);
 });
 

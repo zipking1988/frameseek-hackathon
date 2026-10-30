@@ -166,7 +166,7 @@ async def test_open_question_uses_one_verified_call_and_local_index_needs_none(
                 assert (await client.get(event["evidence"][0]["uri"])).status_code == 200
         elif mode == "negative":
             assert response["status"] == "no_result" and not response["events"]
-            assert "不代表整段视频" in response["answer"]
+            assert "does not establish absence from the full video" in response["answer"]
         else:
             assert response["status"] == "error" and not response["events"]
         assert (await client.post("/api/chat", json=body)).json() == result.json()

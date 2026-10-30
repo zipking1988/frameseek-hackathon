@@ -51,24 +51,28 @@ def readiness_report(settings, runtime, approved=False):
 
     check(
         "mode",
-        "真实分析模式",
+        "Live analysis mode",
         settings.mode == "real",
-        "fixture 只提供预设演示；切换真实模式需要本机配置，不能由此页面批准费用。",
+        "Fixture mode provides preset demonstrations. Live mode "
+        "requires trusted configuration; this page cannot approve "
+        "spending.",
     )
     check(
         "media_tools",
-        "本机视频工具",
+        "Video tools",
         all(shutil.which(t) for t in ("ffmpeg", "ffprobe")),
-        "上传预检和证据抽取需要 FFmpeg / ffprobe；部署隔离仍需单独验证。",
+        "Upload preflight and evidence extraction require FFmpeg and "
+        "ffprobe; deployment isolation requires separate "
+        "verification.",
     )
     blockers = runtime.blockers() if runtime else ["model_endpoints_missing"]
     roles = []
     for role, label in (
-        ("vision", "视觉回看"),
-        ("embed", "向量检索"),
-        ("rerank", "候选重排"),
-        ("text", "文本整理"),
-        ("asr", "音轨转写"),
+        ("vision", "Visual review"),
+        ("embed", "Vector retrieval"),
+        ("rerank", "Candidate reranking"),
+        ("text", "Text synthesis"),
+        ("asr", "Audio transcription"),
     ):
         endpoint = getattr(runtime, role, None) if runtime else None
         key_present = bool(endpoint and (not endpoint.key_env or os.environ.get(endpoint.key_env)))
@@ -86,13 +90,15 @@ def readiness_report(settings, runtime, approved=False):
     required = all(r["configured"] and r["key_present"] for r in roles if not r["optional"])
     check(
         "models",
-        "模型配置与凭据",
+        "Model configuration and credentials",
         required,
-        "此检查仅读取配置，不连接模型。ASR 可选；未配置时不宣称音轨理解能力。",
+        "This check only reads configuration and does not contact "
+        "models. Audio transcription is optional and unavailable if "
+        "not configured.",
     )
     check(
         "endpoints",
-        "端点与媒体边界",
+        "Endpoints and media boundaries",
         bool(runtime)
         and not any(
             b in blockers
@@ -112,13 +118,20 @@ def readiness_report(settings, runtime, approved=False):
             )
         ),
         (
-            "Gemini 路线将本机解码的 JPEG 帧发往 Google Gemini API；需在私有配置中明确启用。"
-            "文本和检索阶段不发送媒体；当前不支持音轨转写。"
+            "The Gemini route sends locally decoded JPEG frames to the "
+            "Google Gemini API only when explicitly enabled in trusted "
+            "configuration."
+            " Text and retrieval stages do not send media; audio transcription is not supported."
             if gemini
-            else "Token Factory 路线仅向固定官方 API 发送本机抽取的 JPEG；"
-            "检索、重排和回答只发送文本。尚未批准预算时不会调用；不支持音轨转写。"
+            else "The Token Factory route sends locally extracted JPEGs only "
+            "to the fixed official API; "
+            "retrieval, reranking and answer stages send text only. "
+            "Calls require budget approval; audio transcription is not "
+            "supported."
             if provider == "tokenfactory"
-            else "帧和音频仅发送到已列出的自托管服务，远程服务需要 HTTPS，文本服务不接收媒体。"
+            else "Frames and audio are sent only to allowlisted self-hosted "
+            "services over HTTPS when remote; text services do not "
+            "receive media."
         ),
     )
     calibrated = bool(
@@ -129,15 +142,16 @@ def readiness_report(settings, runtime, approved=False):
     )
     check(
         "calibration",
-        "费用校准与资源截止记录",
+        "Cost calibration and resource cutoff",
         calibrated,
-        "只检查校准引用及有效期；不能证明供应商实际停止计费，也不是自动验收。",
+        "This checks calibration references and expiry, not provider billing cutoff or acceptance.",
     )
     check(
         "budget",
-        "当前会话与部署预算",
+        "Session and deployment budgets",
         approved,
-        "两级同版本预算必须已由可信本机操作者记录且有效。分析还需按实际窗口数和费用逐次准入。",
+        "Both matching budget approvals must be active. Each "
+        "analysis is admitted against its actual windows and costs.",
     )
     return {
         "mode": settings.mode,
@@ -149,7 +163,8 @@ def readiness_report(settings, runtime, approved=False):
         and all(c["state"] == "available" for c in checks),
         "live_verified": False,
         "model_requests_sent_by_check": 0,
-        "note": "本地准入检查，不是模型连通性、质量、性能或部署 GO 验收。",
+        "note": "Local admission check only; it does not verify model "
+        "connectivity, quality, performance, or deployment readiness.",
     }
 
 

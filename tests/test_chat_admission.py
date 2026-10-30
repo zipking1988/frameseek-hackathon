@@ -33,7 +33,7 @@ async def test_continue_only_is_clarified_and_budget_preflight_never_creates_fai
         body["question"] = "谁投的三分最多？"
         result = (await client.post("/api/chat/prepare", json=body)).json()
         assert result["kind"] == "capability_blocked"
-        assert "尚未完成全片" in result["message"]
+        assert "Continuous event and unique-entity tracking" in result["message"]
         for question in ("整个比赛 多少个3分球投入？", "视频中箱子被搬动了多少次？"):
             body["question"] = question
             assert (await client.post("/api/chat/prepare", json=body)).json()[
@@ -42,8 +42,8 @@ async def test_continue_only_is_clarified_and_budget_preflight_never_creates_fai
         body["question"] = "描述视频中的篮球场。"
         result = (await client.post("/api/chat/prepare", json=body)).json()
         assert result["kind"] == "budget_blocked"
-        assert "最多剩3次" in result["message"]
-        assert "尚未调用模型" in result["message"]
+        assert "at most 3 remain" in result["message"]
+        assert "No model was called" in result["message"]
         body["question"] = "请查看视频00:05至00:11，描述箱子的位置。"
         assert (await client.post("/api/chat/prepare", json=body)).json()["kind"] == "ready"
         assert len(calls) == before
@@ -83,7 +83,7 @@ async def test_invalid_time_windows_are_actionable_without_dispatch(tmp_path, mo
             )
             assert result.status_code == 200
             assert result.json()["kind"] == "clarification_required"
-            assert "视频时间段无效" in result.json()["message"]
+            assert "Invalid video time range" in result.json()["message"]
         assert len(calls) == before
         with app.state.workspace.db() as conn:
             assert conn.execute("SELECT count(*) FROM queries").fetchone()[0] == 0
@@ -119,7 +119,7 @@ async def test_ledger_outage_reports_unknown_capacity_without_dispatch(tmp_path,
         )
         assert result.status_code == 200
         assert result.json()["kind"] == "budget_unavailable"
-        assert "不会自动重试" in result.json()["message"]
+        assert "No automatic retry" in result.json()["message"]
         status = await client.get("/api/runtime/status")
         assert status.status_code == 200
         assert status.json()["budget_status"] == "unavailable"

@@ -370,7 +370,7 @@ async def test_real_upload_probe_private_frames_range_delete_and_cascade(app):
         }
         prepared = (await a.post("/api/chat/prepare", json=question)).json()
         assert prepared["kind"] == "runtime_blocked"
-        assert "尚未发送给模型" in prepared["message"]
+        assert "not sent to a model" in prepared["message"]
         assert (await a.post("/api/chat", json=question)).status_code == 409
         with app.state.workspace.db() as c:
             assert c.execute("SELECT count(*) FROM queries").fetchone()[0] == 0
@@ -457,6 +457,41 @@ async def test_cross_video_and_forged_real_evidence_cannot_be_saved(app):
         assert response.status_code == 422
     finally:
         await a.aclose()
+
+
+@pytest.mark.anyio
+async def test_basketball_demo_is_isolated_and_legacy_remains_restorable(app):
+    a, b = await client_for(app), await client_for(app)
+    try:
+        before = (await a.get("/health")).json()["model_requests_sent"]
+        basketball = (await a.get("/demo/catalog?video_id=demo_basketball")).json()
+        legacy = (await a.get("/demo/catalog")).json()
+        assert legacy["video"]["id"] == "demo_parcel"
+        assert (await a.get("/demo/catalog?video_id=unknown")).status_code == 404
+        assert (await a.get("/demo/video?video_id=unknown")).status_code == 404
+        assert (
+            await a.get("/demo/video?video_id=demo_basketball", headers={"Range": "bytes=0-31"})
+        ).status_code == 206
+        desks = {}
+        for video, query in (
+            ("demo_basketball", basketball["queries"][0]),
+            ("demo_parcel", legacy["queries"][0]),
+        ):
+            desk = (await a.post("/api/investigations", json={"video_id": video})).json()
+            path = "/api/investigations/" + desk["id"]
+            state = {"records": [{"id": "task-1", "query": query}]}
+            assert (await a.put(path, json={"revision": 0, "state": state})).status_code == 200
+            assert (await a.get(path)).json()["state"]["records"][0]["query"] == query
+            assert (await b.get(path)).status_code == 404
+            desks[video] = (path, state)
+        foreign = {"records": [{"id": "task-1", "query": basketball["queries"][0]}]}
+        assert (
+            await a.put(desks["demo_parcel"][0], json={"revision": 1, "state": foreign})
+        ).status_code == 422
+        assert (await a.get("/health")).json()["model_requests_sent"] == before
+    finally:
+        await a.aclose()
+        await b.aclose()
 
 
 @pytest.mark.anyio

@@ -148,7 +148,7 @@ def scan(directory, cache, frames, progress, active, write_private):
         scanned.extend(
             {"frame": f, "rows": row["rows"]} for f, row in zip(batch, result, strict=True)
         )
-        progress(f"正在读取记分牌 {min(offset + 8, len(frames))}/{len(frames)} 帧…")
+        progress(f"Reading scoreboards in {min(offset + 8, len(frames))}/{len(frames)} frames…")
     return scanned
 
 
@@ -185,11 +185,11 @@ def answer_scores(
                 "end": end,
                 "start_hms": hms(start),
                 "end_hms": hms(end),
-                "action": f"记分牌增加{delta}分",
+                "action": f"Scoreboard increases by {delta} points",
                 "summary": (
-                    f"{proposal['side']} 比分 {proposal['before'][proposal['side']]}"
-                    f"→{proposal['after'][proposal['side']]}；"
-                    "这是记分牌读数，投篮动作尚未确认。"
+                    f"{proposal['side']} score: {proposal['before'][proposal['side']]}"
+                    f"→{proposal['after'][proposal['side']]}. "
+                    "This is a scoreboard reading; the shot has not been confirmed."
                 ),
                 "support_level": "low",
                 "evidence": [
@@ -198,7 +198,10 @@ def answer_scores(
                         "t_hms": hms(f["t"]),
                         "frame_id": f["frame_id"],
                         "uri": f["uri"],
-                        "caption": "记分牌变化的前后原始帧；不冒充动作识别结论。",
+                        "caption": (
+                            "Source frames before and after the scoreboard change; "
+                            "the action is unconfirmed."
+                        ),
                         "asr": None,
                     }
                     for f in pair
@@ -211,13 +214,15 @@ def answer_scores(
     uncertain = []
     seen = set()
     if len(proposed) > 100:
-        uncertain.append(f"候选超过单轮100事件复核上限，另有{len(proposed) - 100}处未复核。")
+        uncertain.append(
+            f"The review limit is 100 events; {len(proposed) - 100} candidates were not reviewed."
+        )
     for n, p in enumerate(proposed[:100]):
         if not active():
             raise ValueError("query_cancelled")
         selected = [f for f in frames if p["end"] - 6 <= f["t"] <= p["end"] + 1][:8]
         if len(selected) < 4:
-            uncertain.append("得分变化附近画面不足，未计数。")
+            uncertain.append("There are too few frames near a score change to count it.")
             continue
         prompt = (
             f"复核这组连续篮球画面中是否存在一次{delta}分投篮命中。图片按时间正序排列。"
@@ -267,7 +272,7 @@ def answer_scores(
         )[:24]
         receipt = cache / f"shot-{key}.raw.json"
         started = cache / f"shot-{key}.started"
-        progress(f"正在复核得分事件 {n + 1}/{len(proposed)}（比分更新 {hms(p['end'])}）…")
+        progress(f"Reviewing score event {n + 1}/{len(proposed)} (updated at {hms(p['end'])})…")
         try:
             if receipt.is_file():
                 raw = json.loads(receipt.read_text())
@@ -299,7 +304,8 @@ def answer_scores(
                 continue
             if not result["confirmed"] or not indices:
                 uncertain.append(
-                    f"{hms(p['start'])}–{hms(p['end'])} 得分变化未能确认单次投篮命中。"
+                    "A made shot could not be confirmed for the score change at "
+                    f"{hms(p['start'])}–{hms(p['end'])}."
                 )
                 continue
             seen.add(canonical)
@@ -318,10 +324,10 @@ def answer_scores(
                     "end": end,
                     "start_hms": hms(start),
                     "end_hms": hms(end),
-                    "action": f"{delta}分投篮命中复核",
+                    "action": f"Reviewed {delta}-point made shot",
                     "summary": (
-                        f"{p['side']} 比分 {p['before'][p['side']]}→{p['after'][p['side']]}；"
-                        f"比分在 {hms(p['end'])} 更新，投篮发生在此前画面。"
+                        f"{p['side']} score: {p['before'][p['side']]}→{p['after'][p['side']]}. "
+                        f"The score updated at {hms(p['end'])}; the shot appears in earlier frames."
                     ),
                     "support_level": "low",
                     "evidence": [
@@ -330,7 +336,10 @@ def answer_scores(
                             "t_hms": hms(f["t"]),
                             "frame_id": f["frame_id"],
                             "uri": f["uri"],
-                            "caption": "投篮复核与前后比分证据；时间取自原视频帧。",
+                            "caption": (
+                                "Shot review and scoreboard evidence; "
+                                "times come from source frames."
+                            ),
                             "asr": None,
                         }
                         for f in event_frames
@@ -339,29 +348,36 @@ def answer_scores(
             )
             verified_by_proposal[n] = verified[-1]
         except ValueError as error:
-            uncertain.append("复核未完成，保留已确认事件：" + str(error)[:100])
+            uncertain.append(
+                "Review incomplete; confirmed events were retained: " + str(error)[:100]
+            )
             break
     missing = sum(reading(x["frame"], x["rows"]) is None for x in scanned)
     from collections import Counter
 
     sides = Counter(p["side"] for p in proposed)
     text = (
-        f"按记分牌变化统计，已检查画面中有 {len(proposed)} 次单队加{delta}分记录"
+        f"In the reviewed frames, the scoreboard shows {len(proposed)} instances "
+        f"of one team gaining {delta} points"
         + (
-            "（" + "，".join(f"{side} {count}次" for side, count in sides.items()) + "）。"
+            " (" + ", ".join(f"{side}: {count}" for side, count in sides.items()) + ")."
             if proposed
-            else "。"
+            else "."
         )
         if proposed
-        else "当前未读到满足稳定性要求的得分变化，不能据此说视频里没有。"
+        else "No score changes met the stability criteria; this does not mean none occurred."
     )
     if proposed:
-        text += "比分更新时间：" + "、".join(hms(p["end"]) for p in proposed[:100]) + "。"
+        text += " Score update times: " + ", ".join(hms(p["end"]) for p in proposed[:100]) + "."
         text += (
-            f"可作为{delta}分命中的记分牌统计估计；其中 {len(verified)} 次通过动作模型复核，"
-            f"{len(proposed) - len(verified)} 次尚未通过。请回看每次前后比分。"
+            f" This is a scoreboard-based estimate of {delta}-point scores; {len(verified)} passed "
+            f"visual review and {len(proposed) - len(verified)} could not be confirmed. "
+            "Review the score before and after each event."
         )
-    text += f"{missing}/{len(frames)} 张抽帧未能可靠读取记分牌；抽帧可能漏检，不保证全片无遗漏。"
+    text += (
+        f" The scoreboard could not be read reliably in {missing}/{len(frames)} sampled frames; "
+        "sampling may miss events."
+    )
     events = [verified_by_proposal.get(n, event) for n, event in enumerate(score_records)]
     return Answer.model_validate(
         {
@@ -373,7 +389,8 @@ def answer_scores(
             "unresolved": (
                 uncertain[:98]
                 + [
-                    "计数为稳定记分牌加分记录，未通过动作复核的记录不是已验证的投篮命中；不代表完整比赛总数。"
+                    "Counts reflect stable scoreboard increases. Unreviewed shots are not "
+                    "verified makes, and this is not a full-game total."
                 ]
             )
             if events

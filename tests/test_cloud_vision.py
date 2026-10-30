@@ -174,7 +174,7 @@ def test_cloud_negative_batch_does_not_trigger_automatic_single_image_fanout(tmp
         lambda: True,
     )
     assert client.calls == 1 and result["claims"] == []
-    assert "漏检" in result["uncertainties"][0]
+    assert "matches may have been missed" in result["uncertainties"][0]
 
 
 def test_cloud_model_context_is_bounded_without_rewriting_original_anchor():

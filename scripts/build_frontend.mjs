@@ -15,6 +15,7 @@ let html = await readFile(base + "index.html", "utf8");
 for (const file of [
   "app.js",
   "workspace.js",
+  "legacy-demo-english.js",
   "demo-conversation.js",
   "investigation-canvas.js",
   "workbench-model.js",

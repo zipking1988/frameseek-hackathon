@@ -145,7 +145,7 @@ async function harness(readyState = 1, width = 1440) {
       dispatchEvent(event) { emitted.push(event.type); },
     },
     navigator: { clipboard: { writeText: async () => {} } },
-    fetch: async () => ({ ok: true, json: async () => ({ queries: [] }) }),
+    fetch: async url => ({ ok: true, json: async () => ({ queries: [], scenarios: [], video: {id: url.includes("demo_parcel") ? "demo_parcel" : "demo_basketball", uri: url.includes("demo_parcel") ? "/demo/video" : "/demo/video?video_id=demo_basketball", title:"Synthetic demo"} }) }),
     URL: {},
     console,
   });
@@ -189,13 +189,13 @@ test("reset after media failure cannot claim readiness; reload updates source wi
   const h = await harness();
   h.player.dispatch("error");
   h.run("newTask()");
-  assert.equal(h.get("source-step-state").textContent, "需重试");
-  assert.equal(h.get("attached-source-state").textContent, "加载失败");
+  assert.equal(h.get("source-step-state").textContent, "Need to retry");
+  assert.equal(h.get("attached-source-state").textContent, "Loading failed");
   h.run("turns = 2");
   h.get("reload-video").click();
-  assert.equal(h.get("source-step-state").textContent, "加载中");
+  assert.equal(h.get("source-step-state").textContent, "Loading");
   h.player.dispatch("loadedmetadata");
-  assert.equal(h.get("source-step-state").textContent, "已就绪");
+  assert.equal(h.get("source-step-state").textContent, "Ready");
 });
 test("selecting an older task synchronizes the canvas and exposes selected history", async () => {
   const h = await harness();
@@ -203,12 +203,12 @@ test("selecting an older task synchronizes the canvas and exposes selected histo
     `renderAnswer(${JSON.stringify(h.answer("ok", [{ action: "包裹", start: 5, end: 11, evidence: [], summary: "位置" }]))})`,
   );
   h.run(`renderAnswer(${JSON.stringify(h.answer("no_result"))})`);
-  assert.equal(h.get("run-state").textContent, "未找到相关画面");
+  assert.equal(h.get("run-state").textContent, "No matching frames");
   const old = h.get("task-list").children[1];
   old.click();
-  assert.equal(h.get("run-state").textContent, "已提供证据");
+  assert.equal(h.get("run-state").textContent, "Evidence available");
   assert.equal(old.getAttribute("aria-current"), "true");
-  assert.equal(h.get("evidence-step-state").textContent, "待选择");
+  assert.equal(h.get("evidence-step-state").textContent, "To be selected");
 });
 test("mobile evidence reveal and collapse retain task draft", async () => {
   const h = await harness(1, 375);
@@ -225,17 +225,17 @@ test("local playback and new task retain unindexed state and disabled question",
   h.run("setLocalMode(true)");
   h.run("newTask()");
   assert.equal(h.get("question").disabled, true);
-  assert.equal(h.get("run-state").textContent, "未建立索引");
-  assert.equal(h.get("source-step-state").textContent, "未索引");
+  assert.equal(h.get("run-state").textContent, "Not indexed");
+  assert.equal(h.get("source-step-state").textContent, "Not indexed");
   assert.equal(h.get("empty-state").hidden, false);
   assert.equal(h.get("restore-demo").hidden, false);
 });
 test("preflight metadata is shown as complete even while model configuration is pending", async () => {
   const h = await harness();
   h.run('activeVideo={metadata:{duration:2},job:{state:"awaiting_configuration"}}; mediaLoaded()');
-  assert.match(h.get("video-meta").textContent, /视频预检完成/);
+  assert.match(h.get("video-meta").textContent, /Video preflight complete/);
   h.run('activeVideo={metadata:{},job:{state:"probing"}}; mediaLoaded()');
-  assert.match(h.get("video-meta").textContent, /视频预检未完成/);
+  assert.match(h.get("video-meta").textContent, /Video preflight incomplete/);
 });
 test("bounded session history removes the same oldest task as the conversation", async () => {
   const h = await harness();
@@ -261,7 +261,7 @@ test("source rail toggles the open panel and evidence restores its state without
   rail.click();
   assert.equal(h.shell.classList.contains("source-collapsed"), true);
   assert.equal(rail.getAttribute("aria-expanded"), "false");
-  assert.equal(rail.getAttribute("aria-label"), "打开视频面板");
+  assert.equal(rail.getAttribute("aria-label"), "Open video panel");
   rail.click();
   assert.equal(h.shell.classList.contains("source-collapsed"), false);
   assert.equal(rail.getAttribute("aria-expanded"), "true");
@@ -273,7 +273,7 @@ test("source rail toggles the open panel and evidence restores its state without
   assert.equal(h.get("source-dock").scrollTop, 0);
   assert.equal(h.shell.classList.contains("source-collapsed"), false);
   assert.equal(rail.getAttribute("aria-expanded"), "true");
-  assert.equal(rail.getAttribute("aria-label"), "收起视频面板");
+  assert.equal(rail.getAttribute("aria-label"), "Collapse video panel");
   assert.equal(h.player.currentTime, 13);
   assert.equal(h.get("question").value, "保留当前追问");
   assert.ok(h.emitted.includes("frameseek-canvas-changed"), "panel state notifies persistence");
@@ -300,14 +300,14 @@ test("a remote seek reports loading until the target frame is ready, preserving 
   h.player.duration = 384; h.player.seeking = true;
   h.run("seek(60)");
   assert.ok(h.emitted.includes("frameseek-explicit-seek"));
-  assert.match(h.get("seek-status").textContent, /正在定位 01:00/);
-  assert.equal(h.get("evidence-step-state").textContent, "加载中");
+  assert.match(h.get("seek-status").textContent, /Locating 01:00/);
+  assert.equal(h.get("evidence-step-state").textContent, "Loading");
   h.player.readyState = 4;
   h.player.dispatch("seeked");
-  assert.match(h.get("seek-status").textContent, /正在定位/);
+  assert.match(h.get("seek-status").textContent, /Locating/);
   h.player.seeking = false;
   h.player.dispatch("seeked");
-  assert.match(h.get("seek-status").textContent, /已定位 01:00 · 保持暂停/);
+  assert.match(h.get("seek-status").textContent, /Located 01:00 · Paused/);
   assert.equal(h.player.paused, true);
 });
 
@@ -317,9 +317,9 @@ test("an old seek completion cannot announce the new target before its frame arr
   h.run("seek(60); seek(180)");
   h.player.currentTime = 60; h.player.readyState = 4; h.player.seeking = false;
   h.player.dispatch("seeked");
-  assert.match(h.get("seek-status").textContent, /正在定位 03:00/);
+  assert.match(h.get("seek-status").textContent, /Locating 03:00/);
   h.player.currentTime = 180; h.player.dispatch("seeked");
-  assert.match(h.get("seek-status").textContent, /已定位 03:00/);
+  assert.match(h.get("seek-status").textContent, /Located 03:00/);
 });
 
 test("a failed source cannot complete an old seek from a late data event", async () => {
@@ -328,7 +328,7 @@ test("a failed source cannot complete an old seek from a late data event", async
   h.player.dispatch("error");
   h.player.seeking = false; h.player.readyState = 4;
   h.player.dispatch("loadeddata");
-  assert.match(h.get("seek-status").textContent, /视频无法播放/);
+  assert.match(h.get("seek-status").textContent, /video cannot be played/);
 });
 
 test("native scrubbing can replace an evidence seek that is still buffering", async () => {
@@ -336,9 +336,9 @@ test("native scrubbing can replace an evidence seek that is still buffering", as
   h.player.duration = 384; h.player.seeking = true;
   h.run("seek(60)");
   h.player.currentTime = 90; h.player.dispatch("seeking");
-  assert.match(h.get("seek-status").textContent, /正在定位 01:30/);
+  assert.match(h.get("seek-status").textContent, /Locating 01:30/);
   h.player.seeking = false; h.player.readyState = 4; h.player.dispatch("seeked");
-  assert.match(h.get("seek-status").textContent, /已定位 01:30/);
+  assert.match(h.get("seek-status").textContent, /Located 01:30/);
 });
 
 
@@ -349,7 +349,7 @@ test('suggestion clicks fill the composer without submitting or replacing an exi
   assert.equal(h.get('question').value,'Describe the visible scene');
   assert.equal(h.run('fillSuggestedQuestion("Replace draft")'),false);
   assert.equal(h.get('question').value,'Describe the visible scene');
-  assert.match(h.get('form-notice').textContent,/已有草稿/);
+  assert.match(h.get('form-notice').textContent,/draft was kept/);
   assert.equal(h.get('question').focused,true);
 });
 
@@ -395,7 +395,7 @@ test('inspector visibility restores independently across narrow and wide desktop
   const turn = h.get("messages").children[0];
   const cluster = turn.children.find(child => child.className === "event-cluster");
   assert.equal(cluster.children.length, 1);
-  assert.ok(turn.children.some(child => child.textContent.startsWith("查看全部 ")));
+  assert.ok(turn.children.some(child => child.textContent.startsWith("View all ")));
   assert.equal(JSON.stringify(query.response), original);
   const details = turn.children.find(child => child.className === "response-details");
   const structured = details.children.find(child => child.tagName === "details");

@@ -57,8 +57,8 @@ test("partial结论与未确认项一并导出，不保存失败或无结果为�
   assert.match(md, /位置调查/);
   assert.match(md, /前后核对/);
   assert.match(md, /00:13/);
-  assert.match(md, /未确认：搬运者未知/);
-  assert.match(md, /预设结果/);
+  assert.match(md, /Unconfirmed: 搬运者未知/);
+  assert.match(md, /Preset results/);
   assert.match(md, /下一步核实搬运者/);
   assert.equal(
     s.pinConclusion("one", {
@@ -81,8 +81,8 @@ test("集合限制、移除与重置不遗留引用，本地文件禁止套用�
   assert.deepEqual(s.getSnapshot().pins, []);
   assert.equal(s.pinFrame("one", query, frames[0]), null);
   assert.equal(s.pinConclusion("one", query), null);
-  assert.match(s.markdown(), /本地文件/);
-  assert.doesNotMatch(s.markdown(), /合成演示/);
+  assert.match(s.markdown(), /Local video/);
+  assert.doesNotMatch(s.markdown(), /Synthetic demo/);
 });
 test("超过十二轮仍保留原聊天及发现来源快照", () => {
   const s = createStore();

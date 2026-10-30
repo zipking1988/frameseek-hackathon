@@ -597,8 +597,8 @@ async def test_repeated_question_reuses_completed_supplement_with_remaining_cand
         answer = terminal.json()
         assert answer["response"]["status"] == "no_result"
         assert not answer["response"]["events"]
-        assert "相关画面已补查" in answer["response"]["answer"]
-        assert "不能断定视频中不存在" in answer["response"]["answer"]
+        assert "Relevant frames were checked" in answer["response"]["answer"]
+        assert "absence cannot be established" in answer["response"]["answer"]
         assert answer["index_search"]["supplemented"] is True
         assert answer["response"]["trace"]["visible"]["segments_reviewed"] == 1
         checked = answer["index_search"]["checked_frames"]
@@ -653,7 +653,7 @@ async def test_repeated_question_reuses_completed_supplement_with_remaining_cand
         assert cached.status_code == 200
         assert cached.json()["index_search"]["supplement_reused"] is True
         assert cached.json()["index_search"]["checked_frames"] == checked
-        assert "本次未调用模型" in cached.json()["response"]["answer"]
+        assert "no model was called" in cached.json()["response"]["answer"]
         assert processor.calls == after_negative
         original_again = body | {"request_id": "original-after-new-version"}
         previous = (await client.post("/api/auto-chat/prepare", json=original_again)).json()
@@ -707,7 +707,10 @@ async def test_repeated_question_reuses_completed_supplement_with_remaining_cand
         partial = await client.post("/api/index-chat", json=other_context | {"engine": "index"})
         assert partial.status_code == 200 and partial.json()["response"]["events"]
         assert partial.json()["index_search"]["supplement_incomplete"] is True
-        assert "补查未完成或结果不明" in partial.json()["response"]["answer"]
+        assert (
+            "Supplementary checking is incomplete or unknown"
+            in partial.json()["response"]["answer"]
+        )
 
 
 def test_interrupted_dispatch_is_not_reported_as_retryable_failure():
@@ -984,7 +987,7 @@ async def test_cloud_upload_index_and_chat_with_mock_transport(
                 await stranger.get(f"/api/investigations/{desk['id']}/requests")
             ).status_code == 404
         answer = await client.post("/api/index-chat", json=body | {"engine": "index"})
-        assert answer.status_code == 200 and "云端视觉" in answer.json()["response"]["answer"]
+        assert answer.status_code == 200 and "cloud vision" in answer.json()["response"]["answer"]
         assert answer.json()["index_search"]["cloud_requests_sent"] is None
         recovered = (await client.get(f"/api/investigations/{desk['id']}/requests")).json()
         assert not any(item["id"] == "cloud-detail" for item in recovered["supplements"])
@@ -1138,7 +1141,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         ] == "ready"
         answer = await client.post("/api/index-chat", json=existence | {"engine": "index"})
         assert answer.status_code == 200 and answer.json()["response"]["answer"].startswith(
-            "索引中观察到有匹配。"
+            "The index contains a match."
         )
         followup = body | {
             "request_id": "pronoun-followup",
@@ -1150,7 +1153,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         ] == "ready"
         answer = await client.post("/api/index-chat", json=followup | {"engine": "index"})
         assert answer.status_code == 200 and answer.json()["response"]["events"]
-        assert "未确认跨镜头为同一对象" in answer.json()["response"]["answer"]
+        assert "identity across shots is unconfirmed" in answer.json()["response"]["answer"]
         assert answer.json()["index_search"]["knowledge_version"] == status["version"]
         retry = body | {
             "request_id": "explicit-followup",
@@ -1219,7 +1222,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         ] == "ready"
         text_answer = await client.post("/api/index-chat", json=text_followup | {"engine": "index"})
         assert text_answer.status_code == 200 and text_answer.json()["response"]["events"]
-        assert "跨镜头" not in text_answer.json()["response"]["answer"]
+        assert "identity across shots" not in text_answer.json()["response"]["answer"]
         scoped = body | {
             "request_id": "scoped-parent",
             "question": "请在00:00至00:08找出人物，列出出现时间和画面。",
@@ -1258,7 +1261,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         )
         assert no_leads.status_code == 200
         assert no_leads.json()["response"]["status"] == "no_result"
-        assert "不确定" in no_leads.json()["response"]["answer"]
+        assert "uncertain" in no_leads.json()["response"]["answer"]
         assert not no_leads.json()["response"]["events"]
         assert processor.calls == 2
         missing_body = body | {
@@ -1364,7 +1367,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         assert final.json()["index_search"]["knowledge_version"] == supplement["version"]
         assert final.json()["response"]["events"]
         assert final.json()["index_search"]["supplemented"] is True
-        assert "合成测试数据" in final.json()["response"]["answer"]
+        assert "synthetic test" in final.json()["response"]["answer"]
         assert processor.calls == 26
         continued = body | {
             "request_id": "continued-detail",
@@ -1375,7 +1378,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         assert prepared["kind"] == "ready" and prepared["plan_kind"] == "direct_retrieval"
         result = await client.post("/api/index-chat", json=continued | {"engine": "index"})
         assert result.status_code == 200 and result.json()["response"]["events"]
-        assert "未确认跨镜头为同一对象" in result.json()["response"]["answer"]
+        assert "identity across shots is unconfirmed" in result.json()["response"]["answer"]
         assert processor.calls == 26
         processor.release.clear()
         processor.entered.clear()
@@ -1463,7 +1466,7 @@ async def test_upload_cancel_resume_and_index_chat(tmp_path, monkeypatch):
         }
         unavailable = (await client.post("/api/auto-chat/prepare", json=needs_processor)).json()
         assert unavailable["plan_kind"] == "processor_unavailable"
-        assert "本机补查暂不可用" in unavailable["message"]
+        assert "Local supplementary checking is unavailable" in unavailable["message"]
         assert unavailable["model_requests_sent"] == 0
         assert processor.calls == calls_before_reuse
         with app.state.agent.ledger._connect() as connection:

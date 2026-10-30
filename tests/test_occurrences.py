@@ -212,7 +212,7 @@ def test_full_frame_overlapping_scope_start_is_found_without_fabricating_timesta
     answer = chat_answer(result)
     assert answer["events"][0]["start"] == 4
     assert answer["events"][0]["evidence"][0]["t"] == 4
-    assert "首帧在所选时段开始前呈现" in answer["events"][0]["summary"]
+    assert "first frame appears before the selected range" in answer["events"][0]["summary"]
 
     sampled = catalog(2, complete=False)
     sampled = checkpoint(sampled, [observation(0), observation(1)], sampled.snapshot())

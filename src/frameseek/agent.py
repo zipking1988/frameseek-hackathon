@@ -682,7 +682,9 @@ def progress_answer(video, observations, all_frames, reviewed, channels=None):
             "timebase": "video_absolute_seconds",
             "answer": "\n".join(i["statement"] for i in observations)[:10000],
             "events": events,
-            "unresolved": ["查询未完全结束；仅保留已验证的候选画面。"],
+            "unresolved": [
+                "The search did not finish; only validated candidate frames were retained."
+            ],
             "followups": [],
             "errors": [],
             "trace": {
@@ -1070,9 +1072,11 @@ class Agent:
         all_frames = {frame["frame_id"]: frame for frame in sampled}
         events = observed_events(video, observations, all_frames)
         note = (
-            f"已检索索引中的{selection['indexed_frames']}张已保存画面，"
-            f"本轮视觉复核{len(sampled)}张候选；未逐帧检查整段视频。"
-            "时间引用只证明该画面时刻可见，不能推断两次出现之间持续存在。"
+            f"Searched {selection['indexed_frames']} saved indexed frames; "
+            f"visually reviewed {len(sampled)} candidates. "
+            "The video was not checked frame by frame. "
+            "A timestamp proves visibility only at that frame, not continuous presence "
+            "between appearances."
         )
         answer = {
             "schema_version": "0.1",
@@ -1081,8 +1085,8 @@ class Agent:
             "answer": (
                 "\n".join(item["statement"] for item in observations)
                 if events
-                else "本轮候选画面中未找到满足完整问题条件的可验证匹配。"
-                "这不代表整段视频中不存在该内容。"
+                else "No verifiable candidate matched all question conditions. "
+                "This does not establish absence from the full video."
             )[:8000]
             + "\n"
             + note,
@@ -1291,7 +1295,10 @@ class Agent:
         observations = []
         warnings = []
         if self.runtime.provider == "tokenfactory":
-            warnings.append("本轮每个候选片段最多抽取8帧，可能遗漏短暂动作；不能确认全部投篮命中。")
+            warnings.append(
+                "At most eight frames were sampled per candidate clip; brief actions may be missed "
+                "and not all made shots can be confirmed."
+            )
         for n, i in enumerate(dict.fromkeys(inspect)):
             window = selected[i]
             directory = self.ws.root / video
@@ -1326,7 +1333,7 @@ class Agent:
                                     'Return {"observations":[{"frame_ids":["..."],'
                                     '"statement":"..."}],"unresolved":["..."]}. '
                                     "Only directly visible evidence, no inferred identity. "
-                                    "Write statements in Chinese. Answer only requested "
+                                    "Write statements in English. Answer only requested "
                                     "attributes; omit unrelated numbers and commentary. "
                                     "Give each independently observed timestamp/value its own "
                                     "observation referencing only the corresponding frame_ids. "
@@ -1384,7 +1391,7 @@ class Agent:
                     "schema_version": "0.1",
                     "status": "no_result",
                     "timebase": "video_absolute_seconds",
-                    "answer": "本轮检查的画面中未发现符合问题的证据。",
+                    "answer": "No evidence matching the question was found in the reviewed frames.",
                     "events": [],
                     "unresolved": [],
                     "followups": [],
@@ -1406,8 +1413,9 @@ class Agent:
                     "status": "no_result",
                     "timebase": "video_absolute_seconds",
                     "answer": (
-                        "本轮指定时段的抽样画面中，未找到可验证该问题的证据。"
-                        "仅检查指定时段的抽样画面，不能据此断言整段视频中不存在该内容。"
+                        "No evidence supporting the question was found in sampled frames "
+                        "from the specified range. "
+                        "Sampling that range cannot establish absence from the full video."
                         + " ".join(warnings)
                     )[:10000],
                     "events": [],
@@ -1441,7 +1449,7 @@ class Agent:
                             "observations": observations,
                             "unresolved": warnings,
                             "instruction": (
-                                'Return {"answer":"Chinese answer based only on observations",'
+                                'Return {"answer":"English answer based only on observations",'
                                 '"followups":["..."],"unresolved":["..."]}. '
                                 "Never treat a limited search as full-video absence."
                             ),
@@ -1456,7 +1464,7 @@ class Agent:
         except (BudgetDenied, AgentError) as error:
             if str(error) in {"model_unknown", "unknown_attempt_do_not_resend"}:
                 raise
-            warnings.append("完整回答整理未完成：" + str(error))
+            warnings.append("Answer synthesis did not finish: " + str(error))
             synthesis = {
                 "answer": "\n".join(item["statement"] for item in observations)[:10000],
                 "followups": [],
@@ -1465,11 +1473,19 @@ class Agent:
         events = observed_events(video, observations, all_frames)
         unresolved = list(dict.fromkeys(warnings + synthesis.get("unresolved", [])))[:98]
         if manifest["capabilities"]["asr"] not in {"absent", "ready", "no_speech_detected"}:
-            unresolved.append("音轨尚未完成可靠转写；本轮依据仅包括可见画面。")
+            unresolved.append(
+                "The audio track has not been reliably transcribed; "
+                "this answer uses visible footage only."
+            )
         if direct_window:
-            unresolved.append("本轮仅检查指定时间范围内的抽样画面，未检索整段视频。")
+            unresolved.append(
+                "Only sampled frames in the specified range were checked; "
+                "the full video was not searched."
+            )
         elif reviewed < len(segments):
-            unresolved.append("本轮仅回看候选片段，未逐帧检查整段视频。")
+            unresolved.append(
+                "Only candidate clips were reviewed; the full video was not checked frame by frame."
+            )
         answer = {
             "schema_version": "0.1",
             "timebase": "video_absolute_seconds",

@@ -295,7 +295,7 @@ async def test_owned_semantic_occurrences_and_durable_zero_model_chat(tmp_path, 
         assert sent.status_code == 200, sent.text
         result = sent.json()
         assert result["response"]["status"] == "partial" and len(result["response"]["events"]) == 3
-        assert "引用画面时间：" in result["response"]["answer"]
+        assert "cited frame times:" in result["response"]["answer"]
         assert (
             result["response"]["events"][0]["evidence"][0]["t_hms"] in result["response"]["answer"]
         )
@@ -357,13 +357,16 @@ def test_sampled_answer_labels_partial_timestamp_list_and_keeps_exact_frames():
     result = search_occurrences(index, CRITERIA, limit=5)
     result.update(video_id=index.video, duration=index.duration, question="find red hats")
     answer = chat_answer(result)
-    assert "5个匹配的抽样画面时点；这不是人数或事件次数" in answer["answer"]
-    assert "识别结果尚未验证，请回看引用画面" in answer["answer"]
-    assert "索引记录" in answer["events"][0]["summary"]
-    assert "部分引用画面时间：00:00:00.125、00:00:01.125、00:00:02.125" in answer["answer"]
+    assert (
+        "5 matching sampled frame times; this is not a count of people or events"
+        in answer["answer"]
+    )
+    assert "Recognition is unverified; review the cited frames" in answer["answer"]
+    assert "subject in the saved frame" in answer["events"][0]["summary"]
+    assert "Some cited frame times: 00:00:00.125, 00:00:01.125, 00:00:02.125" in answer["answer"]
     assert "00:00:03.125" not in answer["answer"]
     gender_result = result | {"conditions": [{"field": "gender", "value": "male"}]}
-    assert "未核实本人身份或性别认同" in chat_answer(gender_result)["answer"]
+    assert "identity and gender identity are unverified" in chat_answer(gender_result)["answer"]
     assert [event["evidence"][0]["t"] for event in answer["events"]] == [
         0.125,
         1.125,
@@ -371,7 +374,7 @@ def test_sampled_answer_labels_partial_timestamp_list_and_keeps_exact_frames():
         3.125,
         4.125,
     ]
-    assert "不能据此断言全部出现时间" in answer["answer"]
+    assert "prevent a claim of all appearances" in answer["answer"]
 
 
 def test_data_driven_arbitrary_semantic_alias_and_same_subject_binding():
@@ -419,7 +422,7 @@ async def test_event_count_ranking_replay_evidence_and_recovery_without_models(
         result = response.json()
         assert result["index_search"]["aggregation"]["unique_events"] == 2
         assert result["index_search"]["aggregation"]["repeated_clips"] == 1
-        assert "归并为2组事件" in result["response"]["answer"]
+        assert "grouped into 2 events" in result["response"]["answer"]
         assert len(result["response"]["events"]) == 3
         for event in result["response"]["events"]:
             for frame in event["evidence"]:
@@ -432,7 +435,7 @@ async def test_event_count_ranking_replay_evidence_and_recovery_without_models(
             )
         ).json()
         assert ranked["index_search"]["aggregation"]["ranking_complete"]
-        assert "entity-one：2组" in ranked["response"]["answer"]
+        assert "entity-one: 2 groups" in ranked["response"]["answer"]
         transitioned = (
             await client.post(
                 "/api/index-chat",

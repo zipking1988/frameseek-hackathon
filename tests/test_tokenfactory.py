@@ -673,7 +673,7 @@ async def test_direct_window_failure_is_honest_and_never_replays(tmp_path, monke
             if failure == "budget":
                 assert response.status_code == 409
                 assert result["response"]["errors"][0]["code"] == "budget_blocked"
-                assert "预算" in result["response"]["answer"]
+                assert "Budget" in result["response"]["answer"]
         assert len(calls) - before == (0 if failure == "budget" else 1)
         repeated = (await client.post("/api/chat", json=body)).json()
         if failure == "timeout":

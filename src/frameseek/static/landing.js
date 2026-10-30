@@ -1,7 +1,7 @@
 /* Illustrative marketing interactions only. No workspace state or model requests. */
 (() => {
   const frames = [
-    { time: "04:58", title: "Defender steps toward help", image: "court.jpg", alt: "Illustrative wide view of an indoor basketball game" },
+    { time: "04:58", title: "Players face off", image: "basketball-drive.png", alt: "Illustrative basketball player dribbling against a defender" },
     { time: "05:03", title: "Pass to the wing", image: "pass.jpg", alt: "Illustrative basketball pass to the wing" },
     { time: "05:08", title: "Defender closes out", image: "court.jpg", alt: "Illustrative basketball court and defensive positioning" },
     { time: "05:10", title: "Shot is taken", image: "shot.jpg", alt: "Illustrative basketball scene: a defender contests a jump shot" },
@@ -13,11 +13,45 @@
   const time = document.getElementById("sequence-time");
   const caption = document.getElementById("sequence-caption");
   const frameButtons = [...document.querySelectorAll("[data-frame]")];
-  let current = 3;
+  let current = 0;
   let timer = null;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const activeMotion = new Map();
+  function animateChange(element, offset) {
+    activeMotion.get(element)?.cancel();
+    activeMotion.delete(element);
+    if (reducedMotion.matches || typeof element.animate !== "function") return;
+    const animation = element.animate(
+      [{ opacity: 0.82, transform: `translateY(${offset}px)` }, { opacity: 1, transform: "translateY(0)" }],
+      { duration: 240, easing: "cubic-bezier(.2, 0, 0, 1)" },
+    );
+    activeMotion.set(element, animation);
+    animation.onfinish = () => {
+      if (activeMotion.get(element) === animation) activeMotion.delete(element);
+    };
+  }
+  reducedMotion.addEventListener("change", (event) => {
+    if (!event.matches) return;
+    for (const animation of activeMotion.values()) animation.cancel();
+    activeMotion.clear();
+  });
+
+  // Content stays visible without JavaScript or when reduced motion is requested.
+  if ("IntersectionObserver" in window && !reducedMotion.matches) {
+    const revealObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        revealObserver.unobserve(entry.target);
+        if (!reducedMotion.matches) animateChange(entry.target, 12);
+      }
+    }, { threshold: 0.12 });
+    document.querySelectorAll(".section-heading, .feature-copy, .feature-visual, .canvas-story-visual, .demo-limitations, .faq-intro, .faq-list, .closing-copy")
+      .forEach((element) => revealObserver.observe(element));
+  }
 
   function showFrame(index) {
     if (!Number.isInteger(index) || !frames[index]) return;
+    const changed = index !== current;
     current = index;
     const frame = frames[index];
     image.src = `/static/landing/${frame.image}`;
@@ -26,10 +60,14 @@
     caption.textContent = `${frame.time} · ${frame.title}`;
     position.value = String(index);
     position.setAttribute("aria-valuetext", `${frame.time} — ${frame.title}`);
+    if (changed) {
+      animateChange(image, 5);
+      animateChange(caption, 4);
+    }
     for (const button of frameButtons) {
       const selected = Number(button.dataset.frame) === index;
       button.classList.toggle("is-selected", selected);
-      if (button.classList.contains("frame-thumb")) button.setAttribute("aria-pressed", String(selected));
+      if (button.classList.contains("frame-thumb") || button.classList.contains("evidence-card")) button.setAttribute("aria-pressed", String(selected));
     }
   }
 
@@ -96,7 +134,8 @@
   const relationObserver = new ResizeObserver(drawRelations);
   relationObserver.observe(panel);
   document.fonts.ready.then(drawRelations);
-  function selectTab(tab) {
+  function selectTab(tab, updateUrl = false) {
+    const changed = room.dataset.view !== tab.dataset.view;
     for (const item of tabs) {
       const selected = item === tab;
       item.setAttribute("aria-selected", String(selected));
@@ -104,10 +143,22 @@
       document.getElementById(item.getAttribute("aria-controls")).hidden = !selected;
     }
     room.dataset.view = tab.dataset.view;
+    if (changed && updateUrl) animateChange(document.getElementById(tab.getAttribute("aria-controls")), 7);
+    if (updateUrl) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("preview", tab.dataset.view);
+      window.history.replaceState(window.history.state, "", url);
+    }
     if (tab.dataset.view === "questions") window.requestAnimationFrame(drawRelations);
   }
+  function restoreTabFromUrl() {
+    const view = new URL(window.location.href).searchParams.get("preview");
+    selectTab(tabs.find((tab) => tab.dataset.view === view) || tabs[0]);
+  }
+  restoreTabFromUrl();
+  window.addEventListener("popstate", restoreTabFromUrl);
   tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => selectTab(tab));
+    tab.addEventListener("click", () => selectTab(tab, true));
     tab.addEventListener("keydown", (event) => {
       let next;
       if (event.key === "ArrowRight") next = tabs[(index + 1) % tabs.length];
@@ -116,7 +167,7 @@
       else if (event.key === "End") next = tabs.at(-1);
       else return;
       event.preventDefault();
-      selectTab(next);
+      selectTab(next, true);
       next.focus();
     });
   });

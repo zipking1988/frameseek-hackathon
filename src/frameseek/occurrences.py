@@ -515,7 +515,7 @@ def plan_source(directory, video, generation, metadata, extractor_revision):
                 "file": file,
                 "frame_id": video + "_" + file[:-4],
                 "uri": f"/media/{video}/frames/{file}",
-                "caption": "尚未提取视觉观察",
+                "caption": "Visual observations have not been extracted yet.",
             }
         )
     return ObservationIndex.model_validate(

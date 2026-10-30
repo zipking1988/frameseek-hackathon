@@ -4,7 +4,16 @@
   const normalize = (value) => value.normalize("NFKC").toLowerCase().replace(/[\s？?。！!，,]/g, "");
   function resolve(question, queries, previousId) {
     const value = normalize(question);
-    const exact = queries.find((query) => normalize(query.question) === value);
+    const previous = queries.find((query) => query.id === previousId);
+    const scoped = Object.entries(previous?.followup_map || {}).find(
+      ([label]) => normalize(label) === value || normalize(root.FrameSeekLegacyEnglish?.text(label) || label) === value,
+    );
+    if (scoped) {
+      const query = queries.find((item) => item.id === scoped[1]) || null;
+      return { query, usedContext: Boolean(query) };
+    }
+    const exact = queries.find((query) => normalize(query.question) === value
+      || normalize(root.FrameSeekLegacyEnglish?.text(query.question) || query.question) === value);
     if (exact) return { query: exact, usedContext: false };
     // These are explicit aliases for the labeled synthetic demonstration, not
     // general video understanding or a keyword-based inference.
@@ -13,12 +22,12 @@
       包裹何时出现在中央: "center",
       whenistheparcelinthecenter: "center",
       whenistheparcelontheright: "right",
+      isthereaforklift: "forklift",
       包裹什么时候移到右侧: "right",
       视频中有没有叉车: "forklift",
     };
     const example = queries.find((query) => query.id === aliases[value]);
     if (example) return { query: example, usedContext: false };
-    const previous = queries.find((query) => query.id === previousId);
     // One explicit English fixture follow-up, scoped to the preceding center answer.
     if (value === "whathappensnext" && previous?.id === "center") {
       const query = queries.find((item) => item.id === "right") || null;
@@ -26,14 +35,6 @@
     }
     const repeat = ["看看证据", "能看一下证据吗"].includes(value);
     if (previous && repeat) return { query: previous, usedContext: true };
-    const match = Object.entries(previous?.followup_map || {}).find(
-      ([label]) => normalize(label) === value,
-    );
-    if (match)
-      return {
-        query: queries.find((q) => q.id === match[1]) || null,
-        usedContext: true,
-      };
     const parcelContext = ["center", "right", "person"].includes(previousId);
     const followups = {
       那后来呢: "right",
@@ -46,6 +47,7 @@
       谁搬的: "person",
       是谁搬的: "person",
       能确认是谁搬的吗: "person",
+      whomovedit: "person",
     };
     const id = followups[value];
     const query =

@@ -27,11 +27,32 @@ def sufficient_index(result):
 
 def choose_engine(question, result, *, local_ready, cloud_ready):
     if needs_audio(question):
-        return "model", "正在检查音轨和转写能力；不会用静态画面猜测声音。"
+        return (
+            "model",
+            (
+                "Checking audio and transcription capabilities; sound will "
+                "not be inferred from still frames."
+            ),
+        )
     if sufficient_index(result):
-        return "index", "已有结构化证据覆盖本次条件，将直接检索，不调用模型。"
+        return (
+            "index",
+            "Existing structured evidence covers these conditions; search will not call a model.",
+        )
     if local_ready:
-        return "local", "已有证据不足，正在使用本机视觉分析，不消耗云端额度。"
+        return (
+            "local",
+            "Existing evidence is insufficient; local visual analysis will not use cloud budget.",
+        )
     if cloud_ready:
-        return "cloud", "已有证据不足，正在检查云端分析预算；通过后才会处理视频。"
-    return "model", "已有证据不足，正在检查可用模型与预算；不会自动重试。"
+        return (
+            "cloud",
+            "Existing evidence is insufficient; cloud budget is checked before processing.",
+        )
+    return (
+        "model",
+        (
+            "Existing evidence is insufficient; checking model "
+            "availability and budget. No automatic retry."
+        ),
+    )

@@ -150,7 +150,7 @@ async function harness(readyState = 1, width = 1440) {
       dispatchEvent() {},
     },
     navigator: { clipboard: { writeText: async () => {} } },
-    fetch: async () => ({ ok: true, json: async () => ({ queries: [] }) }),
+    fetch: async url => ({ ok: true, json: async () => ({ queries: [], scenarios: [], video: {id: url.includes("demo_parcel") ? "demo_parcel" : "demo_basketball", uri: url.includes("demo_parcel") ? "/demo/video" : "/demo/video?video_id=demo_basketball", title:"Synthetic demo"} }) }),
     URL: {},
     Event,
     console,
@@ -247,11 +247,11 @@ test("unsupported follow-up on another topic gives a supported recovery question
   h.run('lastQueryId = "forklift"; ask("那后来呢？")');
   assert.equal(h.get("question").value, "那后来呢？");
   assert.equal(h.get("messages").children.length, 0);
-  assert.match(h.get("form-notice").textContent, /当前话题不支持这个追问/);
-  assert.match(h.get("form-notice").textContent, /包裹什么时候出现在中央/);
-  assert.doesNotMatch(h.get("form-notice").textContent, /演示支持「那后来呢/);
+  assert.match(h.get("form-notice").textContent, /Try a demo question/);
+  assert.match(h.get("form-notice").textContent, /center/);
+  assert.doesNotMatch(h.get("form-notice").textContent, /unsupported follow-up/);
   h.run('lastQueryId = "center"; ask("不支持的问题")');
-  assert.match(h.get("form-notice").textContent, /演示支持「那后来呢/);
+  assert.match(h.get("form-notice").textContent, /Try a demo question/);
 });
 
 test("uploaded source uses its own preview poster before analysis and replaces it on navigation", async () => {
@@ -263,7 +263,7 @@ test("uploaded source uses its own preview poster before analysis and replaces i
   assert.equal(h.player.src, "/media/vid_a/video");
   assert.equal(h.get("question").disabled, true);
   h.run('window.FrameSeekSessionUI.applySource({id:"vid_b", name:"B", job:{state:"ready"}, metadata:{preview:[{uri:"/media/vid_b/frames/preview_001.jpg"}]}})');
-  assert.equal(h.get('evidence-question').textContent,'素材预览');
+  assert.equal(h.get('evidence-question').textContent,'Video preview');
   assert.equal(h.player.poster, "/media/vid_b/frames/preview_001.jpg");
   assert.equal(h.get("question").disabled, false);
 });
@@ -275,11 +275,12 @@ test("switching from an uploaded video resets synthetic metadata before and afte
   Object.assign(h.player, {duration:384, videoWidth:1280, videoHeight:720});
   h.player.dispatch("loadedmetadata");
   assert.match(h.get("video-meta").textContent, /06:24/);
-  h.run('window.FrameSeekSessionUI.applySource({id:"demo_parcel",metadata:{duration:18,audio:false}})');
-  assert.equal(h.get("video-meta").textContent, "18 秒 · 1600 × 900 · 无音轨");
+  await h.run('window.FrameSeekSessionUI.prepareDemo("demo_parcel")');
+  h.run('window.FrameSeekSessionUI.applySource({id:"demo_parcel",name:"Parcel movement · synthetic demo",metadata:{duration:18,audio:false}})');
+  assert.equal(h.get("video-meta").textContent, "18 seconds · 1600 × 900 · No audio track");
   Object.assign(h.player, {duration:18, videoWidth:1600, videoHeight:900});
   h.player.dispatch("loadedmetadata");
-  assert.equal(h.get("video-meta").textContent, "18 秒 · 1600 × 900 · 无音轨");
+  assert.equal(h.get("video-meta").textContent, "18 seconds · 1600 × 900 · No audio track");
 });
 
 test("retrying a failed real turn preserves the draft and explains a fresh question without dispatch", async () => {
@@ -290,7 +291,7 @@ test("retrying a failed real turn preserves the draft and explains a fresh quest
   h.get('question').value = '继续问题4';
   h.run("window.FrameSeekUI.continueFrom('failed')");
   assert.equal(h.get('question').value, '继续问题4');
-  assert.match(h.get('form-notice').textContent, /不会自动重试/);
+  assert.match(h.get('form-notice').textContent, /Nothing will be retried automatically/);
   assert.doesNotMatch(h.get('form-notice').textContent, /请写出完整问题/);
   assert.equal(h.document.activeElement, h.get('question'));
   h.get('question').value = '';

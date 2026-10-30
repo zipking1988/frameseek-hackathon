@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from frameseek.agent import Agent, AgentError, explicit_time_window, query_artifact_key
 from frameseek.attempts import BudgetDenied
-from frameseek.demo import catalog
+from frameseek.demo import DEMO_IDS, catalog
 from frameseek.local_vision import configured as local_configured
 from frameseek.media import MAX_UPLOAD, MediaError, frames, probe, scene_windows
 from frameseek.question_context import matches_source_generation
@@ -36,7 +36,7 @@ class Input(BaseModel):
 
 class NewInvestigation(Input):
     video_id: Key = "demo_parcel"
-    title: str = Field(default="未命名调查", max_length=80)
+    title: str = Field(default="Untitled investigation", max_length=80)
 
 
 class SaveInvestigation(Input):
@@ -89,13 +89,13 @@ class IndexSearchInput(Input):
 def unknown_final(request_id):
     return {
         "id": request_id,
-        "question": "先前的查询结果不确定",
+        "question": "Previous query result is unknown",
         "mode": "real",
         "response": {
             "schema_version": "0.1",
             "status": "error",
             "timebase": "video_absolute_seconds",
-            "answer": "先前调用结果不确定，已结束恢复。",
+            "answer": "The previous request outcome is unknown; recovery ended.",
             "events": [],
             "unresolved": [],
             "followups": [],
@@ -107,10 +107,10 @@ def unknown_final(request_id):
                 {
                     "code": "model_unknown",
                     "stage": "query",
-                    "message": "调用结果不确定",
+                    "message": "Request outcome unknown",
                     "cause": "unknown",
                     "retryable": False,
-                    "suggested_action": "显式发起新的尝试。",
+                    "suggested_action": "Submit a new attempt explicitly.",
                     "docs_url": "/docs/errors",
                     "request_id": request_id,
                 }
@@ -158,7 +158,7 @@ def register(app, settings, root, runtime=None, transport=None):
         )
 
     def require_unified_chat(desk):
-        if knowledge_enabled() and desk["video"] != "demo_parcel":
+        if knowledge_enabled() and desk["video"] not in DEMO_IDS:
             raise HTTPException(409, "use_unified_knowledge_chat")
 
     def knowledge_status(video, owner, *, source=None, connection=None):
@@ -438,7 +438,7 @@ def register(app, settings, root, runtime=None, transport=None):
         desk = ws.owned("investigations", body.investigation_id, owner)
         if json.loads(desk["state"]).get("epoch", 0) != body.generation:
             raise HTTPException(409, "stale_chat_generation")
-        if desk["video"] == "demo_parcel":
+        if desk["video"] in DEMO_IDS:
             raise HTTPException(409, "demo_uses_explicit_fixtures")
         source = ws.owned("videos", desk["video"], owner)
         with ws.db() as c:
@@ -673,8 +673,9 @@ def register(app, settings, root, runtime=None, transport=None):
                     "schema_version": "0.1",
                     "status": "no_result",
                     "timebase": "video_absolute_seconds",
-                    "answer": "相关画面已补查，但系统仍无法确认满足全部条件的画面。"
-                    "识别可能遗漏，不能断定视频中不存在。",
+                    "answer": "Relevant frames were checked, but no frame "
+                    "can be confirmed to meet all conditions. "
+                    "Recognition can miss content; absence cannot be established.",
                     "events": [],
                     "unresolved": [],
                     "followups": [],
@@ -710,7 +711,11 @@ def register(app, settings, root, runtime=None, transport=None):
                 condition.get("field") == "text" for condition in result.get("conditions", [])
             )
         ):
-            answer["answer"] += " 本次按上一问题的描述匹配，未确认跨镜头为同一对象。"
+            answer["answer"] += (
+                " Matched the previous question’s "
+                "description; identity across shots is "
+                "unconfirmed."
+            )
         with ws.db() as c:
             supplement = checked_supplement_request(c, body, owner, source)
         if supplement and supplement["state"] == "running":
@@ -735,24 +740,36 @@ def register(app, settings, root, runtime=None, transport=None):
         if supplemented:
             cloud_supplement = settings.mode == "real"
             description = (
-                "合成测试数据" if synthetic else "云端视觉" if cloud_supplement else "本机视觉"
+                "synthetic test"
+                if synthetic
+                else "cloud vision"
+                if cloud_supplement
+                else "local vision"
             )
             answer["answer"] = answer["answer"].replace(
-                "本次模型调用0次。",
-                f"结果包含{description}补查的观察。"
+                "No model calls in this turn.",
+                f"Results include observations from a {description} supplementary check."
                 if cloud_supplement
-                else f"结果包含{description}补查的观察，未调用云端模型。",
+                else f"Results include observations from a {description} supplementary check; "
+                "no cloud model was called.",
             )
             for event in answer["events"]:
                 for evidence in event["evidence"]:
-                    evidence["caption"] = "引用更新后的结构化观察；请回看原视频画面。"
+                    evidence["caption"] = (
+                        "This cites an updated structured observation; review the original frame."
+                    )
             if completed_supplement:
-                answer["answer"] += " 本次处理包含此前完成的局部补查。"
+                answer["answer"] += (
+                    " This result includes a previously completed supplementary check."
+                )
         elif cached_supplement:
-            answer["answer"] += " 已复用之前的补查，本次未调用模型。"
+            answer["answer"] += " A prior supplementary check was reused; no model was called."
         elif supplement_incomplete:
             answer["answer"] = answer["answer"].replace(
-                "本次模型调用0次。", "补查未完成或结果不明；以下结果来自已有索引。"
+                "No model calls in this turn.",
+                "Supplementary checking is incomplete or "
+                "unknown; these results come from the "
+                "existing index.",
             )
         terminal = {
             "id": body.request_id,
@@ -1078,7 +1095,7 @@ def register(app, settings, root, runtime=None, transport=None):
         return saved
 
     def expanded_investigation(desk, owner):
-        if desk["video"] != "demo_parcel":
+        if desk["video"] not in DEMO_IDS:
             try:
                 for record in [*desk["state"].get("records", []), *desk["state"].get("pins", [])]:
                     if "response" not in record["query"]:
@@ -1123,7 +1140,7 @@ def register(app, settings, root, runtime=None, transport=None):
                 if not re.fullmatch(r"(?:task|finding)-[0-9]{1,9}", record["id"]):
                     raise ValueError
                 query = record["query"]
-                if desk["video"] != "demo_parcel" and "response" not in query:
+                if desk["video"] not in DEMO_IDS and "response" not in query:
                     query = stored_query(query, desk, owner)
                 if not isinstance(query["question"], str) or len(query["question"]) > 4000:
                     raise ValueError
@@ -1136,9 +1153,10 @@ def register(app, settings, root, runtime=None, transport=None):
                     for frame in event.evidence
                 ):
                     raise ValueError
-                if desk["video"] == "demo_parcel":
+                if desk["video"] in DEMO_IDS:
                     canonical = next(
-                        (q for q in catalog()["queries"] if q["id"] == query["id"]), None
+                        (q for q in catalog(desk["video"])["queries"] if q["id"] == query["id"]),
+                        None,
                     )
                     if (
                         not canonical
@@ -1490,14 +1508,14 @@ def register(app, settings, root, runtime=None, transport=None):
             # Restoring an existing pending/unknown/terminal request must not need
             # a fresh budget or trigger another model dispatch.
             return {"kind": "ready", "request_id": body.request_id}
-        if desk["video"] != "demo_parcel" and (
+        if desk["video"] not in DEMO_IDS and (
             settings.mode != "real" or not runtime or runtime.blockers()
         ):
             return {
                 "kind": "runtime_blocked",
-                "message": "当前服务未启用真实模型，或模型配置未就绪。"
-                "已保存的回答可以回看，但本次问题尚未发送给模型。"
-                "原问题已保留；请在「更多 → 模型与预算」查看配置。",
+                "message": "Live analysis is disabled or not configured. "
+                "Saved answers are available; this question was not sent to a model. "
+                "Your question was kept. Check More → Models and budget.",
             }
         context = prior(body, owner, desk)
         from frameseek.visual_search import requires_aggregation
@@ -1508,7 +1526,7 @@ def register(app, settings, root, runtime=None, transport=None):
             try:
                 source = (
                     ws.owned("videos", desk["video"], owner)
-                    if desk["video"] != "demo_parcel"
+                    if desk["video"] not in DEMO_IDS
                     else None
                 )
                 duration = json.loads(source["metadata"]).get("duration") if source else 18
@@ -1520,10 +1538,13 @@ def register(app, settings, root, runtime=None, transport=None):
         if not short_scope:
             return {
                 "kind": "capability_blocked",
-                "message": "尚未完成全片连续事件和唯一实体追踪，不能从索引抽样推算总次数或排名。"
-                "可以查找相关人物、物品或动作，列出已观察到的时间和证据；"
-                "上传片段也不能代表未出现在素材里的完整活动。"
-                "本次尚未调用模型，输入已保留。",
+                "message": "Continuous event and unique-entity tracking are not "
+                "established, so sampled frames cannot establish totals or "
+                "rankings. "
+                "You can search for visible people, objects or actions and "
+                "list observed times and evidence. "
+                "An uploaded clip cannot represent activity outside the footage. "
+                "No model was called; your draft was kept.",
             }
         if re.fullmatch(
             r"\s*(?:请)?(?:继续|接着)(?:这个|刚才的|上个|上一[轮个])?(?:问题|提问)?[。！？?！\s]*",
@@ -1531,8 +1552,8 @@ def register(app, settings, root, runtime=None, transport=None):
         ):
             return {
                 "kind": "clarification_required",
-                "message": "请补充这次想核对的具体内容，例如「这张画面的比赛还剩多少秒？」。"
-                "本次尚未调用模型，输入已保留。",
+                "message": "Specify what to check, such as the time remaining in this frame. "
+                "No model was called; your draft was kept.",
             }
         if (
             re.search(r"^(它|他|她|那里|那之后|然后呢|后来呢|中间呢|那个)", body.question)
@@ -1540,9 +1561,10 @@ def register(app, settings, root, runtime=None, transport=None):
         ):
             return {
                 "kind": "clarification_required",
-                "message": "请选中有证据的问题，或明确要查找的物体与时间。",
+                "message": "Select a question with evidence or specify the object and "
+                "time to search.",
             }
-        if check_budget and desk["video"] != "demo_parcel":
+        if check_budget and desk["video"] not in DEMO_IDS:
             video = ws.owned("videos", desk["video"], owner)
             if video["manifest"]:
                 manifest = json.loads(video["manifest"])
@@ -1555,8 +1577,9 @@ def register(app, settings, root, runtime=None, transport=None):
                         raise
                     return {
                         "kind": "clarification_required",
-                        "message": "视频时间段无效：开始时间须早于结束时间，且都在视频长度以内。"
-                        "本次尚未调用模型，输入已保留。",
+                        "message": "Invalid video time range: the start must precede the end, "
+                        "and both must be within the video. "
+                        "No model was called; your draft was kept.",
                     }
                 try:
                     agent.ledger.admit_cost(
@@ -1573,16 +1596,19 @@ def register(app, settings, root, runtime=None, transport=None):
                     except BudgetDenied:
                         return {
                             "kind": "budget_unavailable",
-                            "message": "无法读取当前预算账本，本次尚未发送给模型。"
-                            "输入已保留；不会自动重试或启用其他额度。",
+                            "message": "The budget ledger could not be read; this question was not "
+                            "sent to a model. "
+                            "Your draft was kept. No automatic retry or other budget will be used.",
                         }
                     remaining = min((row[0] for row in rows), default=0)
                     return {
                         "kind": "budget_blocked",
-                        "message": f"本问题的处理路径需预留最多{calls}次模型请求，"
-                        f"目前最多剩{remaining}次；"
-                        "也可能因金额或审批状态未通过准入。尚未调用模型，输入已保留。"
-                        "可指定不超过60秒的具体视频时间段以减少检索调用。",
+                        "message": f"This question requires reserving up to {calls} model calls; "
+                        f"at most {remaining} remain. "
+                        "Admission may also fail due to amount or approval status. "
+                        "No model was called; your draft was kept. "
+                        "Specify a time range of no more than 60 seconds to reduce "
+                        "retrieval calls.",
                     }
         return {"kind": "ready", "request_id": body.request_id}
 
@@ -1602,7 +1628,8 @@ def register(app, settings, root, runtime=None, transport=None):
                 "kind": "request_exists",
                 "engine": "model",
                 "model_requests_sent": 0,
-                "message": "这条请求已存在，请恢复原请求；不会重新选择模型或重发。",
+                "message": "This request already exists. Recover it; the model will not "
+                "be selected again or resent.",
             }
         if knowledge_enabled():
             status = knowledge_status(source["id"], owner)
@@ -1613,7 +1640,8 @@ def register(app, settings, root, runtime=None, transport=None):
                     "engine": "index",
                     "knowledge_status": status,
                     "model_requests_sent": 0,
-                    "message": "基础索引尚未完成；可继续播放视频和查看已有回答。",
+                    "message": "The base index is incomplete. You can still play the video "
+                    "and view saved answers.",
                 }
         if not knowledge_enabled() and ws.job(source["id"], owner)["state"] != "ready":
             raise HTTPException(409, "source_not_ready")
@@ -1633,7 +1661,8 @@ def register(app, settings, root, runtime=None, transport=None):
                     "kind": "capability_blocked",
                     "plan_kind": "capability_missing",
                     "engine": "index",
-                    "message": "当前基础索引没有语音转写，无法根据画面判断声音内容。",
+                    "message": "The current index has no audio transcript; audio content "
+                    "cannot be inferred from images.",
                     "model_requests_sent": 0,
                 }
 
@@ -1644,7 +1673,9 @@ def register(app, settings, root, runtime=None, transport=None):
                             "kind": "ready",
                             "engine": "index",
                             "plan_kind": "direct_retrieval",
-                            "route_message": "本机补查暂不可用，将显示已有索引及覆盖限制。",
+                            "route_message": "Local supplementary checking is unavailable; "
+                            "existing index results and coverage limits "
+                            "will be shown.",
                             "knowledge_version": result["knowledge_version"],
                             "model_requests_sent": 0,
                         }
@@ -1652,7 +1683,7 @@ def register(app, settings, root, runtime=None, transport=None):
                         **result,
                         "engine": "index",
                         "plan_kind": "processor_unavailable",
-                        "message": message + " 本机补查暂不可用。",
+                        "message": message + " Local supplementary checking is unavailable.",
                         "model_requests_sent": 0,
                     }
                 response = {
@@ -1678,9 +1709,12 @@ def register(app, settings, root, runtime=None, transport=None):
                             **response,
                             "kind": "supplement_unknown" if unknown else "budget_blocked",
                             "message": (
-                                "之前的补查调用结果不确定；不会自动重发，原问题已保留。"
+                                "The prior supplementary result is unknown; it will not be "
+                                "resent automatically, and your question was kept."
                                 if unknown
-                                else "补查的配置或预算未通过；本次未调用模型，原问题已保留。"
+                                else "Supplementary configuration or budget "
+                                "admission failed; no model was called and "
+                                "your question was kept."
                             ),
                         }
                     except (ValueError, KeyError, TypeError, OSError):
@@ -1723,7 +1757,8 @@ def register(app, settings, root, runtime=None, transport=None):
                         "kind": "ready",
                         "engine": "index",
                         "plan_kind": "supplement_unconfirmed",
-                        "route_message": "补查已完成，正在整理未确认结果。",
+                        "route_message": "Supplementary checking finished; preparing "
+                        "unconfirmed results.",
                         "model_requests_sent": 0,
                     }
                 from frameseek.knowledge_planning import plan_supplement
@@ -1735,13 +1770,18 @@ def register(app, settings, root, runtime=None, transport=None):
                     plan = plan_supplement(index, question, version)
                 except (ValueError, KeyError, TypeError, OSError):
                     raise HTTPException(409, "observation_index_unavailable_or_stale") from None
-                message = result.get("message", "现有索引无法确认这个问题。")
+                message = result.get("message", "The existing index cannot confirm this question.")
                 if plan["kind"] == "supplement_candidates":
                     return supplement_response(
-                        plan, message + " 已定位相关片段，可以进行局部补查。"
+                        plan,
+                        message
+                        + " Relevant segments are available for a bounded supplementary check.",
                     )
                 elif plan["kind"] == "coverage_gap":
-                    message += " 没有可定位的候选片段，不会自动重扫全片。"
+                    message += (
+                        " No candidate segments were found; the full "
+                        "video will not be rescanned automatically."
+                    )
                 return {
                     **result,
                     "kind": (
@@ -1808,12 +1848,15 @@ def register(app, settings, root, runtime=None, transport=None):
                     except (ValueError, KeyError, TypeError, OSError):
                         raise HTTPException(409, "observation_index_unavailable_or_stale") from None
                     if plan["kind"] == "supplement_candidates":
-                        return supplement_response(plan, "部分画面仍不确定，将补查相关片段。")
+                        return supplement_response(
+                            plan, "Some frames remain uncertain; relevant segments will be checked."
+                        )
             return {
                 "kind": "ready",
                 "engine": "index",
                 "plan_kind": "direct_retrieval",
-                "route_message": "正在检索已建立的基础索引；抽帧可能遗漏短暂内容。",
+                "route_message": "Searching the existing index; sampled frames "
+                "can miss brief content.",
                 "knowledge_version": result["knowledge_version"],
                 "model_requests_sent": 0,
             }
@@ -1938,11 +1981,13 @@ def register(app, settings, root, runtime=None, transport=None):
             terminal = unknown_final(request_id)
             terminal["video_id"] = desk["video"]
             terminal["question"] = json.loads(row["input"])["question"]
-            terminal["response"]["answer"] = "本轮查找已取消，未生成有效证据。"
+            terminal["response"]["answer"] = (
+                "This search was cancelled and produced no valid evidence."
+            )
             terminal["response"]["errors"][0].update(
                 code="query_cancelled",
-                message="查找已取消",
-                suggested_action="如需继续，请显式提交新问题。",
+                message="Search cancelled",
+                suggested_action="Submit a new question to continue.",
             )
             progress = query_progress(c, desk, owner, row)
             if progress:
@@ -1961,7 +2006,7 @@ def register(app, settings, root, runtime=None, transport=None):
     def chat(body: ChatInput, owner=owner_dependency):
         desk = ws.owned("investigations", body.investigation_id, owner)
         require_unified_chat(desk)
-        if desk["video"] == "demo_parcel":
+        if desk["video"] in DEMO_IDS:
             raise HTTPException(409, "demo_uses_explicit_fixtures")
         generation = json.loads(desk["state"]).get("epoch", 0)
         if generation != body.generation:
@@ -1990,9 +2035,9 @@ def register(app, settings, root, runtime=None, transport=None):
                             "state": "pending" if old["state"] == "running" else "unknown",
                             "request_id": body.request_id,
                             "retry_after_seconds": 3 if old["state"] == "running" else None,
-                            "suggested_action": "同一请求恢复结果"
+                            "suggested_action": "Recovering the same request"
                             if old["state"] == "running"
-                            else "调用结果不确定，请勿自动重发",
+                            else "Request outcome unknown; do not resend automatically",
                         },
                         status_code=202 if old["state"] == "running" else 409,
                         headers={"Retry-After": "3"} if old["state"] == "running" else None,
@@ -2115,7 +2160,8 @@ def register(app, settings, root, runtime=None, transport=None):
                         "state": "unknown",
                         "request_id": body.request_id,
                         "retry_after_seconds": None,
-                        "suggested_action": "调用结果不确定，不会自动重复扣费；原问题已保留。",
+                        "suggested_action": "The request result is unknown. It will not be retried "
+                        "automatically; your question was kept.",
                     },
                     status_code=409,
                 )
@@ -2126,13 +2172,15 @@ def register(app, settings, root, runtime=None, transport=None):
                 "schema_version": "0.1",
                 "status": "error",
                 "timebase": "video_absolute_seconds",
-                "answer": "本轮被预算检查拦截：审批已暂停，或剩余请求次数/金额不足。"
-                "未完成新的视觉复核。"
+                "answer": "Budget admission blocked this request: approval is paused "
+                "or the remaining calls or amount are insufficient. "
+                "No new visual review was completed."
                 if budget_blocked
-                else "这段视频的音轨尚未完成可靠转写，无法回答解说内容。"
-                "本轮未调用模型，也未产生新的模型费用。"
+                else "The audio has not been reliably transcribed, so the "
+                "commentary cannot be answered. "
+                "No model was called and no new model charges were incurred."
                 if audio_unavailable
-                else "本轮查找未完成，未生成有效证据。",
+                else "This search did not complete and produced no valid evidence.",
                 "events": [],
                 "unresolved": [],
                 "followups": [],
@@ -2144,20 +2192,21 @@ def register(app, settings, root, runtime=None, transport=None):
                     {
                         "code": code if re.fullmatch(r"[a-z_]+", code) else "analysis_failed",
                         "stage": "query",
-                        "message": "预算审批已暂停或余额不足"
+                        "message": "Budget approval is paused or insufficient"
                         if budget_blocked
-                        else "音轨尚未完成可靠转写"
+                        else "The audio track has not been reliably transcribed"
                         if audio_unavailable
-                        else "查找未完成",
+                        else "Search incomplete",
                         "cause": "approved_budget_unavailable"
                         if budget_blocked
                         else "audio_channel_unavailable"
                         if audio_unavailable
                         else "unknown",
                         "retryable": False,
-                        "suggested_action": "可以改问画面中可见的内容；目前不能依据音轨回答。"
+                        "suggested_action": "Ask about visible content; audio answers are "
+                        "unavailable."
                         if audio_unavailable
-                        else "检查素材就绪状态、模型配置和剩余预算。",
+                        else "Check video readiness, model configuration, and remaining budget.",
                         "docs_url": "/docs/errors",
                         "request_id": body.request_id,
                     }

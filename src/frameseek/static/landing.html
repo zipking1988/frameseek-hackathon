@@ -8,45 +8,35 @@
     <title>FrameSeek — Find the play. See the proof.</title>
     <link rel="icon" href="/static/icons/play.svg" type="image/svg+xml" />
     <link rel="preload" href="/static/fonts/InstrumentSans.ttf" as="font" type="font/ttf" crossorigin />
-    <link rel="preload" href="/static/landing/courtside-hero.jpg" as="image" fetchpriority="high" />
-    <link rel="stylesheet" href="/static/landing.css?v=4ceabcaee647" />
-    <script src="/static/landing.js?v=de5fd3bd0e3a" defer></script>
+    <link rel="preload" href="/static/landing/filmroom-hero.png" as="image" fetchpriority="high" />
+    <link rel="stylesheet" href="/static/landing.css?v=ada50aeb1f14" />
+    <script src="/static/landing.js?v=6d82026f2542" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
+    <main id="main" tabindex="-1">
     <section class="sports-hero" aria-labelledby="hero-title">
-      <img class="hero-image" src="/static/landing/courtside-hero.jpg" width="1536" height="1024" alt="" fetchpriority="high" />
+      <img class="hero-image" src="/static/landing/filmroom-hero.png" width="1672" height="941" alt="" fetchpriority="high" />
       <header class="site-header page-width">
         <a class="wordmark" href="/" aria-label="FrameSeek home">FrameSeek</a>
         <nav class="main-nav" aria-label="Main navigation">
-          <a href="#how-it-works">How it works</a>
-          <a href="#workspace">The workspace</a>
-          <a href="/static/demo-guide-en.html">Judge guide</a>
+          <a href="#workspace">How it works</a>
+          <a href="#follow-up">The workspace</a>
+          <a href="#faq">FAQ</a>
         </nav>
         <a class="button primary header-cta" href="/workspace">Open workspace <img src="/static/icons/arrow-right.svg" width="20" height="20" alt="" /></a>
       </header>
-      <main id="main" class="hero-copy page-width">
-        <p class="eyebrow">Your game. Frame by frame.</p>
-        <h1 id="hero-title">Find the play.<br />See the <em>proof.</em></h1>
-        <p class="hero-description">Ask questions about your game footage.<br class="desktop-break" /> Inspect the cited moments. Keep the whole<br class="desktop-break" /> investigation in view.</p>
+      <div class="hero-layout page-width">
+      <div class="hero-copy">
+        <p class="eyebrow">A video investigation workspace</p>
+        <h1 id="hero-title">Find the play.<br /> See the <em>proof.</em></h1>
+        <p class="hero-description">Ask a question about your game footage. Find the moments that matter, with the video right there so you can judge for yourself.</p>
         <div class="hero-actions">
           <a class="button primary" href="/workspace">Open workspace <img src="/static/icons/arrow-right.svg" width="20" height="20" alt="" /></a>
-          <a class="text-link" href="#how-it-works">See how it works</a>
+          <a class="text-link" href="#workspace">Explore the preview</a>
         </div>
-      </main>
-      <a class="hero-question" href="#workspace"><img src="/static/icons/chats-circle.svg" width="26" height="26" alt="" /><span>Where was the defender before the shot?</span></a>
-      <span class="hero-caption">Illustrative sports imagery</span>
-    </section>
-
-    <section class="manifesto section-width" aria-label="Our approach">
-      <p>The answer is only the beginning.<br /><span>The footage is the evidence.</span></p>
-    </section>
-
-    <section id="workspace" class="workspace-section section-width" aria-labelledby="workspace-title">
-      <div class="section-heading">
-        <h2 id="workspace-title">A film room for every question.</h2>
-        <span class="preview-label">Illustrative product preview</span>
       </div>
+      <section id="workspace" class="hero-preview" aria-label="Illustrative sports workspace preview">
       <div class="film-room" data-view="questions">
         <header class="film-header">
           <a class="film-wordmark" href="/workspace">FrameSeek</a>
@@ -60,42 +50,42 @@
           <aside class="film-rail" aria-label="Preview navigation">
             <a href="#preview-player" class="rail-item active" aria-label="Go to sample media"><img src="/static/icons/folder-open.svg" width="24" height="24" alt="" /><span>Media</span></a>
             <a href="#preview-questions" class="rail-item" aria-label="Go to sample questions"><img src="/static/icons/chats-circle.svg" width="24" height="24" alt="" /><span>Questions</span></a>
-            <a href="#how-it-works" class="rail-item" aria-label="Read the workflow"><img src="/static/icons/stack.svg" width="24" height="24" alt="" /><span>Workflow</span></a>
+            <a href="#follow-up" class="rail-item" aria-label="Read the workflow"><img src="/static/icons/stack.svg" width="24" height="24" alt="" /><span>Workflow</span></a>
           </aside>
           <div id="preview-player" class="film-source" tabindex="-1">
             <div class="sample-player">
-              <img id="sequence-image" class="film-source-image" src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="Illustrative basketball scene: a defender contests a jump shot" />
+              <img id="sequence-image" class="film-source-image" src="/static/landing/basketball-drive.png" width="1672" height="941" loading="lazy" alt="Illustrative basketball player dribbling against a defender" />
               <div class="sample-player-controls">
                 <button id="sequence-play" type="button" aria-label="Play illustrative sequence" aria-pressed="false"><img src="/static/icons/play.svg" width="19" height="19" alt="" /><span id="sequence-play-label">Play sequence</span></button>
-                <span id="sequence-time">05:10</span>
+                <span id="sequence-time">04:58</span>
                 <span class="sequence-kind">Illustrative sequence</span>
               </div>
-              <input id="sequence-position" type="range" min="0" max="3" step="1" value="3" aria-label="Illustrative sequence position" aria-valuetext="05:10 — Shot is taken" />
+            <input id="sequence-position" type="range" min="0" max="3" step="1" value="0" aria-label="Illustrative sequence position" aria-valuetext="04:58 — Players face off" />
             </div>
             <div class="sample-filmstrip" aria-label="Explore the illustrative frames">
-              <button type="button" class="frame-thumb" data-frame="0" aria-label="Preview 04:58: Defender steps toward help" aria-pressed="false"><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="" /><span>04:58</span></button>
+              <button type="button" class="frame-thumb is-selected" data-frame="0" aria-label="Preview 04:58: Players face off" aria-pressed="true"><img src="/static/landing/basketball-drive.png" width="1672" height="941" loading="lazy" alt="" /><span>04:58</span></button>
               <button type="button" class="frame-thumb" data-frame="1" aria-label="Preview 05:03: Pass to the wing" aria-pressed="false"><img src="/static/landing/pass.jpg" width="1672" height="941" loading="lazy" alt="" /><span>05:03</span></button>
               <button type="button" class="frame-thumb" data-frame="2" aria-label="Preview 05:08: Defender closes out" aria-pressed="false"><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="" /><span>05:08</span></button>
-              <button type="button" class="frame-thumb is-selected" data-frame="3" aria-label="Preview 05:10: Shot is taken" aria-pressed="true"><img src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="" /><span>05:10</span></button>
+              <button type="button" class="frame-thumb" data-frame="3" aria-label="Preview 05:10: Shot is taken" aria-pressed="false"><img src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="" /><span>05:10</span></button>
             </div>
-            <p id="sequence-caption" class="sequence-caption" aria-live="polite">05:10 · Shot is taken</p>
+            <p id="sequence-caption" class="sequence-caption" aria-live="polite">04:58 · Players face off</p>
             <p class="sequence-note">Select a frame to explore this example.</p>
           </div>
           <div id="preview-questions" class="film-investigation" tabindex="-1">
             <div id="questions-panel" role="tabpanel" aria-labelledby="questions-tab" class="question-view">
               <canvas id="preview-relations" class="preview-relations" aria-hidden="true"></canvas>
               <article class="question-thread">
-                <h3><img src="/static/icons/chats-circle.svg" width="24" height="24" alt="" />Where did the space open up?</h3>
+                <p class="example-label">Illustrative question</p><h3>Where did the space open up?</h3><p class="example-answer">Explore two example moments. Select a frame to see it in the preview.</p>
                 <div class="evidence-pair">
-                  <button class="evidence-card" type="button" data-frame="0" aria-label="Replay illustrative frame 04:58: Defender steps toward help"><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="Illustrative wide view of players on an indoor basketball court" /><span class="evidence-time">04:58</span><span class="evidence-description">Defender steps toward help</span></button>
-                  <button class="evidence-card is-selected" type="button" data-frame="3" aria-label="Replay illustrative frame 05:10: Shot is taken"><img src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="Illustrative basketball jump shot" /><span class="evidence-time">05:10</span><span class="evidence-description">Shot is taken</span></button>
+                  <button class="evidence-card is-selected" type="button" aria-pressed="true" data-frame="0" aria-label="Replay illustrative frame 04:58: Players face off"><img src="/static/landing/basketball-drive.png" width="1672" height="941" loading="lazy" alt="Illustrative basketball player dribbling against a defender" /><span class="evidence-time">04:58</span><span class="evidence-description">Players face off</span></button>
+                  <button class="evidence-card" type="button" aria-pressed="false" data-frame="3" aria-label="Replay illustrative frame 05:10: Shot is taken"><img src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="Illustrative basketball jump shot" /><span class="evidence-time">05:10</span><span class="evidence-description">Shot is taken</span></button>
                 </div>
               </article>
-              <article class="question-thread">
-                <h3><img src="/static/icons/chats-circle.svg" width="24" height="24" alt="" />What happened just before?</h3>
+              <article class="question-thread followup-thread">
+                <h3>What happened just before?</h3>
                 <div class="evidence-pair">
-                  <button class="evidence-card" type="button" data-frame="1" aria-label="Replay illustrative frame 05:03: Pass to the wing"><img src="/static/landing/pass.jpg" width="1672" height="941" loading="lazy" alt="Illustrative basketball pass to the wing" /><span class="evidence-time">05:03</span><span class="evidence-description">Pass to the wing</span></button>
-                  <button class="evidence-card" type="button" data-frame="2" aria-label="Replay illustrative frame 05:08: Defender closes out"><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="Illustrative basketball court and defensive positioning" /><span class="evidence-time">05:08</span><span class="evidence-description">Defender closes out</span></button>
+                  <button class="evidence-card" type="button" aria-pressed="false" data-frame="1" aria-label="Replay illustrative frame 05:03: Pass to the wing"><img src="/static/landing/pass.jpg" width="1672" height="941" loading="lazy" alt="Illustrative basketball pass to the wing" /><span class="evidence-time">05:03</span><span class="evidence-description">Pass to the wing</span></button>
+                  <button class="evidence-card" type="button" aria-pressed="false" data-frame="2" aria-label="Replay illustrative frame 05:08: Defender closes out"><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="Illustrative basketball court and defensive positioning" /><span class="evidence-time">05:08</span><span class="evidence-description">Defender closes out</span></button>
                 </div>
               </article>
             </div>
@@ -108,17 +98,38 @@
           </div>
         </div>
       </div>
-      <p class="preview-disclosure">AI-created sports imagery and example timestamps. This preview makes no model calls. <a href="/workspace">The workspace starts with a labeled synthetic demo.</a></p>
+      <p class="preview-disclosure">Illustrative basketball preview · no model calls. Imagery and timestamps are examples. <a href="/workspace?demo=basketball">Start basketball demo</a></p>
+      </section>
+      </div>
     </section>
 
-    <section id="how-it-works" class="workflow section-width" aria-label="How FrameSeek works">
-      <article><span class="step-number">01</span><h2>Bring your footage</h2><p>Upload game film from your team, gym or personal library. Work with the footage you already have.</p></article>
-      <article><span class="step-number">02</span><h2>Ask your question</h2><p>Search, explore and dig deeper. Ask about visible moments, sequences and details in plain language.</p></article>
-      <article><span class="step-number">03</span><h2>Replay the evidence</h2><p>Jump to the cited moments, watch in context, and keep building your investigation on the same canvas.</p></article>
+    <section id="follow-up" class="feature-story section-width" aria-labelledby="followup-title">
+      <div class="feature-copy"><p class="eyebrow">Go deeper / 02</p><h2 id="followup-title">Replay, follow up,<br />keep the context.</h2><p>Return to a cited moment and watch the surrounding video. Then ask a follow-up without losing the original question.</p><a class="button primary" href="/workspace">Open workspace <img src="/static/icons/arrow-right.svg" width="20" height="20" alt="" /></a></div>
+      <div class="feature-visual" aria-label="Illustrative follow-up preview"><p class="example-label">Follow-up question</p><h3>What happened just before?</h3><div class="feature-frames"><a href="#workspace" data-frame="0" aria-label="Preview illustrative frame at 04:58"><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="Illustrative court view" /><span>04:58</span></a><a href="#workspace" data-frame="1" aria-label="Preview illustrative frame at 05:03"><img src="/static/landing/pass.jpg" width="1672" height="941" loading="lazy" alt="Illustrative pass" /><span>05:03</span></a><a href="#workspace" data-frame="3" aria-label="Preview illustrative frame at 05:10"><img src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="Illustrative shot" /><span>05:10</span></a></div><a class="text-link" href="#workspace">Explore the example <img src="/static/icons/arrow-right.svg" width="18" height="18" alt="" /></a></div>
     </section>
+    <section class="feature-story canvas-story section-width" aria-labelledby="canvas-story-title">
+      <div class="feature-copy"><p class="eyebrow">Full context / 03</p><h2 id="canvas-story-title">Keep the whole investigation in view.</h2><p>Questions, evidence frames and conclusions stay together on a canvas, so you can return to a thread as your investigation develops.</p><a class="text-link" href="#workspace">See the preview <img src="/static/icons/arrow-right.svg" width="18" height="18" alt="" /></a></div>
+      <div class="canvas-story-visual"><p class="example-label">Illustrative investigation</p><div class="canvas-story-nodes"><div><strong>Question</strong><span>Where did the space open up?</span><img src="/static/landing/court.jpg" width="1280" height="720" loading="lazy" alt="" /></div><img class="story-connector" src="/static/icons/arrow-right.svg" width="18" height="18" alt="" /><div><strong>Evidence</strong><span>04:58 · 05:10</span><img src="/static/landing/shot.jpg" width="1672" height="941" loading="lazy" alt="" /></div><img class="story-connector" src="/static/icons/arrow-right.svg" width="18" height="18" alt="" /><div><strong>Follow-up</strong><span>What happened just before?</span><img src="/static/landing/pass.jpg" width="1672" height="941" loading="lazy" alt="" /></div></div><p>Keep each question connected to its source.</p></div>
+    </section>
+    <aside class="demo-limitations section-width" aria-label="About this preview"><div><p class="eyebrow">About this preview</p><h2>A visual example, not a game analysis.</h2><p>The basketball scenes and timestamps are illustrative. They are not model output or evidence from a real game.</p></div><p>The workspace offers a synthetic basketball demo with preset answers and no model calls. Uploaded videos require a configured analysis route and any required approvals.</p></aside>
+    <section id="faq" class="faq section-width" aria-labelledby="faq-title">
+      <div class="faq-intro"><p class="eyebrow">The details / 03</p><h2 id="faq-title">Questions before you start.</h2><p>What to expect when you open FrameSeek.</p></div>
+      <div class="faq-list">
+        <details><summary>What can I try right now?</summary><p>The workspace opens with a labeled synthetic demo and preset answers. The landing page preview is also illustrative. Neither sends model requests.</p></details>
+        <details><summary>Can I use my own video?</summary><p>Yes. You can upload video for local preflight and private playback. Uploads are subject to workspace limits; see the <a href="/static/demo-guide-en.html">guide</a> for more context.</p></details>
+        <details><summary>How do I check an answer?</summary><p>Use the cited timestamps and frames to return to the source video and inspect the surrounding footage. Review the evidence yourself before drawing a conclusion.</p></details>
+        <details><summary>Does my uploaded video automatically get AI answers?</summary><p>No. Uploaded-video analysis needs an appropriately configured route and its required approvals. The default fixture mode does not send model requests or substitute demo answers for uploaded footage.</p></details>
+      </div>
+    </section>
+
+    <section class="closing-cta" aria-labelledby="getting-started-title">
+      <img src="/static/landing/hoop-banner.png" width="1672" height="941" loading="lazy" alt="" />
+      <div class="closing-inner section-width"><div class="closing-copy"><p class="eyebrow">Start investigating</p><h2 id="getting-started-title">Explore the play.</h2><p>Try the synthetic basketball demo or open the workspace for your own video.</p><a class="button primary" href="/workspace?demo=basketball">Start basketball demo <img src="/static/icons/arrow-right.svg" width="20" height="20" alt="" /></a><a class="text-link" href="/workspace">Open workspace</a></div></div>
+    </section>
+    </main>
     <footer class="site-footer section-width">
       <a class="wordmark" href="/">FrameSeek</a>
-      <p>Desktop sports video investigation.<br /><span>Uploaded-video analysis requires a configured model.</span></p>
+      <p>Desktop sports video investigation.<br /><span>Uploaded-video analysis requires a configured route.</span></p>
       <a class="text-link" href="/workspace">Open workspace <img src="/static/icons/arrow-right.svg" width="20" height="20" alt="" /></a>
     </footer>
   </body>

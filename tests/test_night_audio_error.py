@@ -28,8 +28,8 @@ async def test_audio_refusal_explains_no_dispatch_and_preserves_ledger(tmp_path,
         )
         answer = result.json()["response"]
         assert answer["status"] == "error"
-        assert "音轨尚未完成可靠转写" in answer["answer"]
-        assert "未调用模型" in answer["answer"]
+        assert "audio has not been reliably transcribed" in answer["answer"]
+        assert "No model was called" in answer["answer"]
         assert answer["events"] == []
         assert answer["errors"][0]["code"] == "audio_channel_unavailable"
         assert len(calls) == before

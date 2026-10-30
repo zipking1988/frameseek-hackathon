@@ -19,28 +19,19 @@
   <p class="label">FrameSeek / English judge guide</p>
   <h1>Ask a question. Inspect the frame. Replay the evidence.</h1>
   <p>FrameSeek is a desktop film room for investigating basketball footage. Questions, cited source frames and follow-ups stay together in a conversation and a spatial canvas.</p>
-  <p><a class="start" href="/workspace">Open the synthetic demo</a> · <a href="/">Back to FrameSeek</a></p>
-  <p class="notice"><strong>About this demo:</strong> the parcel video is synthetic and consists of three static scenes. Its answers are preset; this demonstration does not call a model or establish live video-recognition quality.</p>
-  <h2>Try the parcel demo</h2>
+  <p><a class="start" href="/workspace?demo=basketball">Start basketball demo</a> · <a href="/">Back to FrameSeek</a></p>
+  <p class="notice"><strong>Synthetic basketball demo:</strong> these are generated stills with preset answers. No model is called. The sequence does not establish continuous play, player identity, or whether a shot scores.</p>
+  <h2>Try the demo</h2>
   <ol>
-    <li>Open the workspace above on a desktop browser. Select the synthetic parcel video if another source is open; this does not grant access to another person's uploaded video.</li>
-    <li>In the question box, enter <code>When is the parcel in the center?</code> and send it. This exact English phrase is supported by this preset demo.</li>
-    <li>The preset answer says the parcel is in the center from <strong>00:05 to 00:11</strong>. Select a frame labelled <strong>Replay</strong> to seek to that moment in the player.</li>
-    <li>Select <strong>Ask a follow-up</strong> under the answer. Enter <code>What happens next?</code> and send it. The next preset answer shows the right-side stage beginning at <strong>00:11</strong>; its <strong>00:13</strong> frame replays at that source time.</li>
-    <li>Use <strong>对话</strong> to see the conversation or <strong>画布</strong> to see the same investigation on the canvas. Refresh to check that the two questions and their evidence remain saved.</li>
+    <li>Open the basketball demo above on a desktop browser.</li>
+    <li>Select <strong>What is visible in the pass scene?</strong> and send the question.</li>
+    <li>Select <strong>Replay</strong> on the cited frame to seek to 00:06.</li>
+    <li>Select <strong>Where is the defender in the shot scene?</strong> and send the follow-up. Replay its frame at 00:13.</li>
+    <li>Choose <strong>Does the shot score?</strong> to see an explicitly uncertain answer. Open <strong>Canvas</strong> to inspect the connected questions; refresh to restore the investigation.</li>
   </ol>
   <h2>Sports and NVIDIA/Nebius evidence</h2>
-  <p>A previous limited basketball test used NVIDIA Nemotron 3.5 Super VL through Nebius Token Factory and returned scoreboard evidence at source time 05:26.1 with a contextual follow-up. Those saved results were partial. They do not prove that a fresh judge session can run new sports analysis.</p>
-  <p>The newer reusable basketball index was tested separately with a local Qwen model. It is not a Nemotron result. The sports imagery on the landing page is AI-created illustration. Private basketball uploads are not shared by this guide.</p>
-  <p>Uploaded-video analysis requires a configured processor and its existing authorization. This guide does not enable a model, grant a budget, or submit a question automatically.</p>
-  <h2>Useful labels</h2>
-  <dl>
-    <dt>上传视频</dt><dd>Upload video</dd>
-    <dt>回看</dt><dd>Replay the cited frame at its video time</dd>
-    <dt>追问这条回答</dt><dd>Ask a follow-up about this answer</dd>
-    <dt>仍需核实</dt><dd>Needs verification</dd>
-    <dt>未检查或不确定范围</dt><dd>Unchecked or uncertain coverage</dd>
-  </dl>
+  <p>A previous limited basketball test used NVIDIA Nemotron 3.5 Super VL through Nebius Token Factory and returned scoreboard evidence at source time 05:26.1 with a contextual follow-up. Those saved results were partial and are separate from this synthetic demo.</p>
+  <p>Uploaded-video analysis requires a configured processor and its existing authorization. The model and budget status is available under <strong>More → Models &amp; budget</strong>.</p>
   <h2>What the demo does not prove</h2>
   <p>The preset answer is not a new model response. A sampled video index can miss brief appearances, and a cited frame is not proof of a complete event count or a person’s identity. The live NVIDIA/Nebius path and fresh-user real-video experience require separate verification.</p>
 </main></body></html>

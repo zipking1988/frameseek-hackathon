@@ -180,7 +180,9 @@ def interpret(question):
     if re.search(
         r"\b(?:not|no|never|without|or|except)\b|n['’]t\b|没有|不穿|不是|或者|除了|未戴|不戴", text
     ):
-        return [], ["否定或任选条件需要明确的结构化筛选，当前不自动猜测。"]
+        return [], [
+            "Negation or alternatives require explicit structured filters; they are not guessed."
+        ]
     # Treat sentence-final 吗 and the leading 有 in the corresponding
     # yes/no form as grammar, without discarding 有 inside visual facts.
     if re.search(r"吗[？?。.!！\s]*$", text):
@@ -248,10 +250,12 @@ def resolve_conditions(index, question, explicit=None):
         remainder = question[: quoted.start()] + " " + question[quoted.end() :]
         terms, problems = interpret(remainder)
         if problems or terms:
-            return [], problems or ["请单独查询引号中的可见文字，避免混淆其他条件。"]
+            return [], problems or [
+                "Search quoted visible text separately to avoid mixing conditions."
+            ]
         literal = next(part for part in quoted.groups() if part is not None)
         if not normalized(literal):
-            return [], ["请填写要查找的可见文字。"]
+            return [], ["Enter the visible text to find."]
         return [Condition(field="text", value=literal, operator="contains")], []
     remainder = normalized(question)
     conditions = []
@@ -264,7 +268,7 @@ def resolve_conditions(index, question, explicit=None):
             remainder = changed
     terms, problems = interpret(remainder)
     if problems or not terms and not conditions:
-        return [], problems or ["请描述要查找的物体、可见属性或动作。"]
+        return [], problems or ["Describe the object, visible attributes or action to find."]
     # Field/value names are extracted from this source's existing observations.
     options = {}
     compounds = {}
@@ -339,7 +343,9 @@ def resolve_conditions(index, question, explicit=None):
             )
             consumed.update(colors | {item})
         else:
-            problems.append(f"索引尚未确认「{match.group(0)}」属于同一件物品。")
+            problems.append(
+                f"The index has not confirmed that '{match.group(0)}' belongs to the same item."
+            )
         pair_text = pair_text.replace(match.group(0), " ", 1)
     pair_pattern = re.compile(
         rf"(?<![a-z0-9])({color_pattern})\s*(?:的\s*)?({garment_pattern})(?![a-z0-9])"
@@ -378,14 +384,16 @@ def resolve_conditions(index, question, explicit=None):
             )
             consumed.update(pair)
         else:
-            problems.append(f"索引尚未确认「{color}{garment}」属于同一件物品。")
+            problems.append(
+                f"The index has not confirmed that '{color}{garment}' belongs to the same item."
+            )
     terms = [term for term in terms if term not in consumed]
     # Match the relationship only when one recorded fact explicitly binds the
     # action and object. Separate facts or other subjects cannot be combined.
     held_objects = set(terms) & HELD_OBJECT_CONCEPTS
     if "holding" in terms and held_objects:
         if len(held_objects) != 1 or set(unbound_terms) & COLOR_CONCEPTS:
-            problems.append("请明确要查找的物体及其属性；尚未确认属性与物体的绑定。")
+            problems.append("Specify the object and attributes; their association is unconfirmed.")
         else:
             held_object = next(iter(held_objects))
             relations = set()
@@ -401,7 +409,7 @@ def resolve_conditions(index, question, explicit=None):
                 conditions.append(Condition(field=field, value=value))
                 terms = [term for term in terms if term not in {"holding", held_object}]
             else:
-                problems.append("索引尚未唯一确认拿着该物体的关系。")
+                problems.append("The index has not uniquely confirmed who holds the object.")
     indexed_fields = {field for values in options.values() for field, _ in values}
     for term in terms:
         available = options.get(term, set())
@@ -419,12 +427,14 @@ def resolve_conditions(index, question, explicit=None):
         ):
             fields = {"color"}
         if len(fields) != 1:
-            problems.append(f"索引中无法唯一解释条件「{term}」，请使用下方可用属性明确筛选。")
+            problems.append(
+                f"The index cannot uniquely interpret '{term}'; select an available filter."
+            )
         else:
             conditions.append(Condition(field=next(iter(fields)), value=term))
     unique = {(c.field, c.value, c.operator): c for c in conditions}
     if len(unique) > 12:
-        return [], ["条件超过12项，请缩小问题范围。"]
+        return [], ["More than 12 conditions; narrow the question."]
     return list(unique.values()), problems
 
 

@@ -135,3 +135,23 @@ test("损坏或循环的演示引用在载入前拒绝", () => {
     assert.throws(() => materialize({ steps }, scopedQueries));
   }
 });
+
+test("basketball follow-ups retain the selected parent and unsupported questions stay unresolved", () => {
+  const pass = {id:"pass", question:"What is visible in the pass scene?", followup_map:{"Where is the defender in the shot scene?":"shot"}};
+  const shot = {id:"shot", question:"Where is the defender in the shot scene?", followup_map:{"Does the shot score?":"outcome"}};
+  const outcome = {id:"outcome", question:"Does the shot score?"};
+  const items=[pass,shot,outcome];
+  assert.deepEqual(resolve(shot.question,items,"pass"),{query:shot,usedContext:true});
+  assert.deepEqual(resolve(outcome.question,items,"shot"),{query:outcome,usedContext:true});
+  assert.equal(resolve("Who is that player?",items,"shot").query,null);
+});
+
+test("legacy display translation never alters the stored fixture or a real answer", () => {
+  const {displayText}=require('../src/frameseek/static/workbench-model.js');
+  const query={id:'center',question:'包裹什么时候出现在中央？',video_id:'demo_parcel',response:{answer:'包裹在 00:05–00:11 出现在工作台中央。'}};
+  const before=JSON.stringify(query);
+  assert.equal(displayText(query.response.answer,query),'The parcel appears in the center from 00:05 to 00:11.');
+  assert.equal(displayText(query.response.answer,{...query,mode:'real'}),query.response.answer);
+  assert.equal(displayText(query.response.answer,{...query,video_id:'private_video'}),query.response.answer);
+  assert.equal(JSON.stringify(query),before);
+});

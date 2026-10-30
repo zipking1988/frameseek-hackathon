@@ -4,16 +4,17 @@ A desktop workspace for questions, cited video frames and contextual follow-ups.
 
 ## Current scope
 
-The default synthetic parcel demo uses preset answers and sends no model requests.
-The sports landing images are illustrative. Upload, media preflight, private
+The default basketball demo uses generated illustrations and preset answers; it
+sends no model requests. The three still scenes do not establish continuous play,
+player identity, or whether the shot scores. Upload, media preflight, private
 playback and durable investigations work locally. An earlier limited basketball
-run used NVIDIA Nemotron 3.5 Super VL on Nebius Token Factory; its results were
-partial. The newer local Qwen visual-index experiment is a separate route.
-Fresh-judge live sports analysis, exhaustive event counts and identity tracking
-are not established.
+run used NVIDIA Nemotron 3.5 Super VL on Nebius Token Factory; its separately
+saved results were partial. The newer local Qwen visual-index experiment is a
+separate route. Fresh-judge live sports analysis, exhaustive event counts and
+identity tracking are not established. Check the workspace runtime status for
+current model availability.
 
-The application source matches the investigation-recovery release deployed on
-October 30, 2026. It includes guarded request recovery, source-generation checks
+The application includes guarded request recovery, source-generation checks
 and evidence checkpoint isolation. Historical partial checkpoints without enough
 identity information cannot be restored automatically; completed answers remain
 viewable. This public source repository excludes private media, account records,
@@ -28,10 +29,16 @@ uv sync --frozen --python 3.13
 make run
 ```
 
-Open http://127.0.0.1:8765/ and choose Open workspace. The English judge guide
-is /static/demo-guide-en.html. Try `When is the parcel in the center?`, replay
-00:06, choose Ask a follow-up, ask `What happens next?`, and replay 00:13.
-These two answers are explicitly synthetic presets, not live recognition.
+Open http://127.0.0.1:8765/ and choose **Start basketball demo**. Select
+`What is visible in the pass scene?` and send it. Replay the cited frame at
+00:06, choose the suggested question `Where is the defender in the shot scene?`,
+send it, and replay 00:13. Select `Does the shot score?` to see a partial answer
+that explains the limit of the still image. Open Canvas to see the related
+questions and evidence; refresh to return to the saved investigation. Selecting
+a suggestion fills the composer; it does not send a question automatically.
+The English judge guide is `/static/demo-guide-en.html`. These answers are
+synthetic presets, not live recognition. Existing parcel investigations and
+older clients remain supported for compatibility.
 
 The application starts one API/worker process per workspace. Private sources,
 frames and investigations require their existing session ownership. Do not
@@ -58,7 +65,9 @@ npm run build
 ```
 
 Node 20+ is needed for frontend development. The committed React bundle includes
-third-party notices. Uploaded media and model results are never bundled here.
+third-party notices. Demo asset provenance and regeneration instructions are in
+`src/frameseek/static/basketball_demo/ASSETS.md`. Uploaded media and private
+model results are never bundled here.
 
 ## License
 

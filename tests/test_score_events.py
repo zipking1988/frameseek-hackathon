@@ -136,8 +136,8 @@ def test_score_records_stay_separate_from_action_verification_and_model_timestam
         json.loads,
     )
     assert len(denied["events"]) == 1 and denied["status"] == "partial"
-    assert denied["events"][0]["action"] == "记分牌增加3分"
-    assert "1 次尚未通过" in denied["answer"]
+    assert denied["events"][0]["action"] == "Scoreboard increases by 3 points"
+    assert "1 could not be confirmed" in denied["answer"]
     assert denied["unresolved"]
 
 
@@ -174,7 +174,7 @@ def test_unknown_verification_is_not_resent(tmp_path, monkeypatch):
     for _ in range(2):
         result = answer_scores(*args)
         assert result["status"] == "partial"
-        assert result["events"][0]["action"] == "记分牌增加3分"
+        assert result["events"][0]["action"] == "Scoreboard increases by 3 points"
     assert client.calls == 1
 
 
@@ -226,12 +226,12 @@ def test_later_failure_preserves_verified_action_and_unconfirmed_score_records(
         answer = answer_scores(*args)
         assert answer["status"] == "partial"
         assert [event["action"] for event in answer["events"]] == [
-            "3分投篮命中复核",
-            "记分牌增加3分",
+            "Reviewed 3-point made shot",
+            "Scoreboard increases by 3 points",
         ]
         assert {"v_f0", "v_f1"} <= {frame["frame_id"] for frame in answer["events"][0]["evidence"]}
-        assert "其中 1 次通过动作模型复核" in answer["answer"]
-        assert "1 次尚未通过" in answer["answer"]
+        assert "1 passed visual review" in answer["answer"]
+        assert "1 could not be confirmed" in answer["answer"]
     assert client.calls == 2, "cached and unknown reviews must not be sent again"
 
 

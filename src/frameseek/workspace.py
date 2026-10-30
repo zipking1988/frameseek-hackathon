@@ -13,6 +13,8 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from frameseek.demo import DEMO_IDS
+
 
 def ident(prefix=""):
     return prefix + secrets.token_hex(16)
@@ -313,9 +315,9 @@ class Workspace:
             raise HTTPException(410, "expired_or_deleted")
         return dict(row)
 
-    def create(self, owner, video="demo_parcel", title="未命名调查"):
+    def create(self, owner, video="demo_parcel", title="Untitled investigation"):
         expiry = time.time() + self.ttl
-        if video != "demo_parcel":
+        if video not in DEMO_IDS:
             expiry = min(expiry, self.owned("videos", video, owner)["expires"])
         key = ident("desk_")
         with self.db() as c:

@@ -2,8 +2,20 @@
 
 from frameseek.schema import Answer, hms
 
+DEMO_IDS = frozenset({"demo_parcel", "demo_basketball"})
 
-def catalog() -> dict:
+
+def catalog(video_id: str = "demo_parcel") -> dict:
+    if video_id == "demo_basketball":
+        from frameseek.basketball_demo import catalog as basketball_catalog
+
+        return basketball_catalog()
+    if video_id != "demo_parcel":
+        raise ValueError("unknown_demo")
+    return parcel_catalog()
+
+
+def parcel_catalog() -> dict:
     def event(start: int, end: int, action: str, caption: str, frames: list[int]) -> dict:
         return {
             "video_id": "demo_parcel",
